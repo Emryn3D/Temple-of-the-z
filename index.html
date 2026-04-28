@@ -162,6 +162,77 @@
     );
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
 
+    // --- world dressing to turn arena into a fuller 3D world
+    const world = new THREE.Group();
+    scene.add(world);
+
+    // Dune clusters
+    const duneMat = new THREE.MeshStandardMaterial({ color:0xceb485, roughness:0.95, metalness:0.02 });
+    for(let i=0;i<55;i++){
+      const dune = new THREE.Mesh(new THREE.SphereGeometry(2.2 + Math.random()*4.5, 18, 14), duneMat);
+      dune.scale.set(1.6 + Math.random()*1.8, 0.3 + Math.random()*0.24, 1.6 + Math.random()*1.8);
+      dune.position.set(Math.random()*330-165, -0.35 + Math.random()*0.2, Math.random()*330-165);
+      if(dune.position.length() < 14) continue; // keep arena center clear
+      dune.castShadow = true; dune.receiveShadow = true;
+      world.add(dune);
+    }
+
+    // Scattered stones/pillars
+    const stoneMat = new THREE.MeshStandardMaterial({ color:0x7e766b, roughness:0.93, metalness:0.04 });
+    for(let i=0;i<80;i++){
+      const geom = Math.random()>0.55
+        ? new THREE.BoxGeometry(0.9+Math.random()*1.7, 1.2+Math.random()*4, 0.9+Math.random()*1.7)
+        : new THREE.CylinderGeometry(0.3+Math.random()*0.7, 0.4+Math.random()*0.9, 1.2+Math.random()*4.5, 8);
+      const rubble = new THREE.Mesh(geom, stoneMat);
+      rubble.position.set(Math.random()*320-160, 0.5, Math.random()*320-160);
+      if(rubble.position.length() < 18 || Math.abs(rubble.position.z+140)<12) continue;
+      rubble.rotation.y = Math.random()*Math.PI;
+      rubble.rotation.z = (Math.random()-0.5)*0.2;
+      rubble.castShadow = rubble.receiveShadow = true;
+      world.add(rubble);
+    }
+
+    // Distant mountain ring
+    const mountainMat = new THREE.MeshStandardMaterial({ color:0x7c6a56, roughness:1.0, metalness:0.0 });
+    for(let i=0;i<40;i++){
+      const a = (i/40)*Math.PI*2 + (Math.random()-0.5)*0.08;
+      const r = 190 + Math.random()*36;
+      const h = 20 + Math.random()*34;
+      const mtn = new THREE.Mesh(new THREE.ConeGeometry(10 + Math.random()*15, h, 10), mountainMat);
+      mtn.position.set(Math.cos(a)*r, h*0.38-0.2, Math.sin(a)*r);
+      mtn.rotation.y = Math.random()*Math.PI;
+      mtn.castShadow = mtn.receiveShadow = true;
+      world.add(mtn);
+    }
+
+    // Temple road and columns
+    const road = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 145),
+      new THREE.MeshStandardMaterial({ color:0x9f8a63, roughness:0.95, metalness:0.02 })
+    );
+    road.rotation.x = -Math.PI/2;
+    road.position.set(0,0.02,-72);
+    road.receiveShadow = true;
+    world.add(road);
+
+    const colMat = new THREE.MeshStandardMaterial({ color:0xa19889, roughness:0.85, metalness:0.03 });
+    for(let i=0;i<14;i++){
+      const z = -14 - i*9.2;
+      const addColumn = (x)=>{
+        const col = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.65,0.72,4.6,14), colMat);
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.95,0.95,0.4,14), colMat);
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.95,0.95,0.45,14), colMat);
+        shaft.position.y = 2.3; cap.position.y = 4.8; base.position.y = 0.22;
+        col.add(shaft, cap, base);
+        col.position.set(x,0,z);
+        col.rotation.y = (Math.random()-0.5)*0.05;
+        col.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; } });
+        world.add(col);
+      };
+      addColumn(-4.6); addColumn(4.6);
+    }
+
     // --- player: billboard (custom sprite as MAIN character, like original)
     const makeBillboard = (tex)=>{ const m=new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide}); const g=new THREE.PlaneGeometry(1,1.8); const mesh=new THREE.Mesh(g,m); mesh.userData.isBillboard=true; mesh.castShadow=true; return mesh; };
     const player = new THREE.Group(); let heroTexture, heroSprite;
@@ -250,6 +321,25 @@ class EnemyChaser{
     const templeBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.4,1.2, 32), new THREE.MeshStandardMaterial({ color:0x555555, roughness:0.9 }));
     templeBase.position.set(0,0.6,-140); templeBase.receiveShadow=true; templeBase.castShadow=true; scene.add(templeBase);
 
+    const templeBody = new THREE.Group();
+    const templeFloor = new THREE.Mesh(new THREE.BoxGeometry(11,1.3,11), new THREE.MeshStandardMaterial({ color:0x8f8676, roughness:0.9 }));
+    templeFloor.position.y = 0.65;
+    templeFloor.castShadow = templeFloor.receiveShadow = true;
+    templeBody.add(templeFloor);
+    const templeRoof = new THREE.Mesh(new THREE.ConeGeometry(7.4,3.4,4), new THREE.MeshStandardMaterial({ color:0x73685a, roughness:0.95 }));
+    templeRoof.position.y = 3.1;
+    templeRoof.rotation.y = Math.PI/4;
+    templeRoof.castShadow = templeRoof.receiveShadow = true;
+    templeBody.add(templeRoof);
+    for(let i=0;i<4;i++){
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.58,0.58,3.6,14), colMat);
+      col.position.set((i<2?-1:1)*2.7,1.8,(i%2?-1:1)*2.7);
+      col.castShadow = col.receiveShadow = true;
+      templeBody.add(col);
+    }
+    templeBody.position.set(0,0,-140);
+    scene.add(templeBody);
+
     // Portal ring (hidden until waves cleared)
     const portalGeo = new THREE.RingGeometry(0.8,1.3,64);
     const portalMat = new THREE.MeshBasicMaterial({color:0x8ad0ff, transparent:true, opacity:0.9});
@@ -286,6 +376,7 @@ class EnemyChaser{
       coins.forEach(c=>{ if(!c.parent) scene.add(c); c.visible=true; });
       knowledge.forEach(k=>{ if(!k.parent) scene.add(k); k.visible=true; });
       templeBase.position.set(0,0.6,-140); portal.visible=false; portal.scale.set(1,1,1);
+      templeBody.position.set(0,0,-140);
     }
 
     // --- main loop

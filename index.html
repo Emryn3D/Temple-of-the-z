@@ -3,479 +3,84 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-  <title>Legend of Now – Temple of Z (Standalone · Waves · 90s · Portal)</title>
+  <title>Legend of Now – Temple of Z (Story Levels)</title>
   <style>
-    :root { --fg:#fff; --bg:#0b0b0b; --glass:#ffffff2a; --accent:#f4d444; --ink:#2b2b2b; --violet:#9777d2; }
+    :root { --fg:#fff; --bg:#0b0b0b; --glass:#ffffff2a; --accent:#f4d444; }
     html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);overflow:hidden;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
     #hud{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;font-weight:700;text-shadow:0 1px 2px #0008}
     #toolbar{position:fixed;top:8px;left:8px;display:flex;gap:8px;z-index:30}
     .btn{border:0;border-radius:10px;padding:8px 12px;background:var(--glass);color:#fff;font-weight:700;backdrop-filter:blur(4px)}
-    .btn:active{background:#ffffff44}
-    #spriteLoad{position:fixed;top:8px;right:8px;z-index:30}
-    #spriteLoad input{display:none}
-    #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0009;backdrop-filter:blur(2px);z-index:40;opacity:0;visibility:hidden;transition:.15s}
-    #overlay.visible{opacity:1;visibility:visible}
-    #overlay .card{background:#111c;border:1px solid #ffffff22;border-radius:16px;padding:20px;min-width:min(92vw,420px);display:flex;flex-direction:column;gap:12px;align-items:center}
-    #overlay h1{margin:0;font-size:22px}
-    #overlay p{margin:0 0 8px 0;text-align:center;opacity:.9}
+    #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0009;backdrop-filter:blur(2px);z-index:40}
+    #overlay .card{background:#111c;border:1px solid #ffffff22;border-radius:16px;padding:20px;min-width:min(92vw,560px);display:flex;flex-direction:column;gap:10px;align-items:center}
     #controls{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:35}
     #controls button{width:64px;height:64px;border:0;border-radius:12px;background:var(--glass);color:#fff;font-size:22px}
-    #controls button:active{background:#ffffff44}
-    canvas{display:block}
   </style>
-
-  <!-- Import map so bare specifiers resolve (keeps your original module layout) -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
-    }
-  }
-  </script>
+  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.158.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.158.0/examples/jsm/"}}</script>
 </head>
 <body>
-  <div id="hud">Wave 1/3 · Left: 0 · Time 01:30 · Score: 0 · Wisdom: 0 · Lives: 3</div>
-  <div id="toolbar">
-    <button id="btnPause" class="btn" title="Pause">⏸</button>
-    <button id="btnResume" class="btn" style="display:none" title="Resume">⏵</button>
-    <button id="btnRestart" class="btn" title="Restart">⟲</button>
-  </div>
-  <label id="spriteLoad" class="btn">Load Sprite<input id="file" type="file" accept="image/*"></label>
-  <div id="controls">
-    <button id="mvL">◀︎</button>
-    <button id="mvB">▼</button>
-    <button id="mvF">▲</button>
-    <button id="mvR">▶︎</button>
-    <button id="btnFire">Z</button>
-  </div>
-  <div id="overlay" class="visible">
-    <div class="card">
-      <h1>Temple of Z — Level 1</h1>
-      <p>Drag to look. Rotate with ◀︎/▶︎ or Q/E. Move with W/A/S/D or arrows. Throw with Z. Sprite upload = your main character.</p>
-      <div style="display:flex;gap:8px">
-        <button id="btnPlay" class="btn">Play</button>
-        <button id="btnOverlayResume" class="btn" style="display:none">Resume</button>
-        <button id="btnOverlayRestart" class="btn" style="display:none">Restart</button>
-      </div>
-    </div>
-  </div>
+<div id="hud"></div>
+<div id="toolbar"><button id="btnPause" class="btn">⏸</button><button id="btnResume" class="btn" style="display:none">⏵</button><button id="btnRestart" class="btn">⟲</button></div>
+<div id="controls"><button id="mvL">◀︎</button><button id="mvB">▼</button><button id="mvF">▲</button><button id="mvR">▶︎</button><button id="btnFire">Z</button></div>
+<div id="overlay"><div class="card"><h1 id="ovTitle">Temple of Z</h1><p id="ovText"></p><button id="btnPlay" class="btn">Start Story</button></div></div>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-  <script type="module">
-    import * as THREE from 'three';
-    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-
-    // --- DOM
-    const hud = document.getElementById('hud');
-    const overlay = document.getElementById('overlay');
-    const btnPlay = document.getElementById('btnPlay');
-    const btnOverlayResume = document.getElementById('btnOverlayResume');
-    const btnOverlayRestart = document.getElementById('btnOverlayRestart');
-    const btnPause = document.getElementById('btnPause');
-    const btnResume = document.getElementById('btnResume');
-    const btnRestart = document.getElementById('btnRestart');
-    const btnFire = document.getElementById('btnFire');
-
-    // === Game config (waves, timer) ===
-    const WAVES = [30, 40, 50];            // heavy waves as requested
-    const PLAYER_SPEED = 7;                // baseline
-    const ENEMY_SPEED = PLAYER_SPEED*0.9;  // 10% slower than player
-    let timeLeft = 90;                     // 90 seconds to beat level
-
-    // wave state
-    let waveIndex = 0;
-    let spawnedCount = 0;                  // how many spawned in current wave
-    let activeCount  = 0;                  // alive in scene
-    let spawnTimer   = 0;
-    let spawnInterval = 1.2;               // tighter as waves progress
-
-    // --- renderer
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(innerWidth, innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    document.body.appendChild(renderer.domElement);
-
-    // --- scene & camera
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xC8D8E8, 40, 220);
-
-    const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 1000);
-    camera.position.set(0, 2.2, 6);
-
-    // --- sky (gradient) dome
-    const skyGeo = new THREE.SphereGeometry(500, 32, 32);
-    const skyMat = new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      uniforms: { top: {value:new THREE.Color(0x9cc9ff)}, bottom:{value:new THREE.Color(0xeed7a1)} },
-      vertexShader: `varying vec3 vW; void main(){ vW=(modelMatrix*vec4(position,1.)).xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-      fragmentShader:`uniform vec3 top; uniform vec3 bottom; varying vec3 vW; void main(){ float h=normalize(vW).y*0.5+0.5; gl_FragColor=vec4(mix(bottom, top, h),1.0); }`
-    });
-    scene.add(new THREE.Mesh(skyGeo, skyMat));
-
-    // --- lights (sun + hemi)
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x9c7b4f, 0.55); // warm ground tint
-    hemi.position.set(0,20,0); scene.add(hemi);
-
-    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-    sun.position.set(40,60,20);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048,2048);
-    sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
-    sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
-    sun.shadow.camera.far = 200;
-    scene.add(sun);
-
-    const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(3,24,24), new THREE.MeshBasicMaterial({color:0xfff1c5}));
-    sunDisc.position.copy(sun.position).multiplyScalar(0.85); scene.add(sunDisc);
-
-    // --- procedural seamless sand (CanvasTexture)
-    function makeSeamlessSand(size=512) {
-      const c = document.createElement('canvas'); c.width = c.height = size;
-      const g = c.getContext('2d');
-      g.fillStyle = '#d8c29a'; g.fillRect(0,0,size,size);
-      const img = g.getImageData(0,0,size,size);
-      const data = img.data;
-      const rnd = (x,y,seed)=> { const s = Math.sin((x*12.9898 + y*78.233 + seed)*43758.5453); return s - Math.floor(s); };
-      let seed = Math.random()*1000;
-      for (let y=0; y<size; y++){
-        for (let x=0; x<size; x++){
-          const n = 0.6*rnd(x,y,seed) + 0.25*rnd((x+size/2)%size,(y+size/2)%size,seed+17) + 0.15*rnd((x+size/4)%size,(y+size/4)%size,seed+31);
-          const i = (y*size + x)*4; const shade=(n*0.35);
-          data[i]=216+shade*30; data[i+1]=194+shade*25; data[i+2]=154+shade*15; data[i+3]=255;
-        }
-      }
-      g.putImageData(img,0,0); return c;
-    }
-
-    const sandTex = new THREE.CanvasTexture(makeSeamlessSand(512));
-    sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
-    sandTex.repeat.set(40,40);
-    sandTex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1;
-
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ map:sandTex, bumpMap:sandTex, bumpScale:0.12, roughness:0.95, metalness:0.02 })
-    );
-    ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
-
-    // --- world dressing to turn arena into a fuller 3D world
-    const world = new THREE.Group();
-    scene.add(world);
-
-    // Dune clusters
-    const duneMat = new THREE.MeshStandardMaterial({ color:0xceb485, roughness:0.95, metalness:0.02 });
-    for(let i=0;i<55;i++){
-      const dune = new THREE.Mesh(new THREE.SphereGeometry(2.2 + Math.random()*4.5, 18, 14), duneMat);
-      dune.scale.set(1.6 + Math.random()*1.8, 0.3 + Math.random()*0.24, 1.6 + Math.random()*1.8);
-      dune.position.set(Math.random()*330-165, -0.35 + Math.random()*0.2, Math.random()*330-165);
-      if(dune.position.length() < 14) continue; // keep arena center clear
-      dune.castShadow = true; dune.receiveShadow = true;
-      world.add(dune);
-    }
-
-    // Scattered stones/pillars
-    const stoneMat = new THREE.MeshStandardMaterial({ color:0x7e766b, roughness:0.93, metalness:0.04 });
-    for(let i=0;i<80;i++){
-      const geom = Math.random()>0.55
-        ? new THREE.BoxGeometry(0.9+Math.random()*1.7, 1.2+Math.random()*4, 0.9+Math.random()*1.7)
-        : new THREE.CylinderGeometry(0.3+Math.random()*0.7, 0.4+Math.random()*0.9, 1.2+Math.random()*4.5, 8);
-      const rubble = new THREE.Mesh(geom, stoneMat);
-      rubble.position.set(Math.random()*320-160, 0.5, Math.random()*320-160);
-      if(rubble.position.length() < 18 || Math.abs(rubble.position.z+140)<12) continue;
-      rubble.rotation.y = Math.random()*Math.PI;
-      rubble.rotation.z = (Math.random()-0.5)*0.2;
-      rubble.castShadow = rubble.receiveShadow = true;
-      world.add(rubble);
-    }
-
-    // Distant mountain ring
-    const mountainMat = new THREE.MeshStandardMaterial({ color:0x7c6a56, roughness:1.0, metalness:0.0 });
-    for(let i=0;i<40;i++){
-      const a = (i/40)*Math.PI*2 + (Math.random()-0.5)*0.08;
-      const r = 190 + Math.random()*36;
-      const h = 20 + Math.random()*34;
-      const mtn = new THREE.Mesh(new THREE.ConeGeometry(10 + Math.random()*15, h, 10), mountainMat);
-      mtn.position.set(Math.cos(a)*r, h*0.38-0.2, Math.sin(a)*r);
-      mtn.rotation.y = Math.random()*Math.PI;
-      mtn.castShadow = mtn.receiveShadow = true;
-      world.add(mtn);
-    }
-
-    // Temple road and columns
-    const road = new THREE.Mesh(
-      new THREE.PlaneGeometry(10, 145),
-      new THREE.MeshStandardMaterial({ color:0x9f8a63, roughness:0.95, metalness:0.02 })
-    );
-    road.rotation.x = -Math.PI/2;
-    road.position.set(0,0.02,-72);
-    road.receiveShadow = true;
-    world.add(road);
-
-    const colMat = new THREE.MeshStandardMaterial({ color:0xa19889, roughness:0.85, metalness:0.03 });
-    for(let i=0;i<14;i++){
-      const z = -14 - i*9.2;
-      const addColumn = (x)=>{
-        const col = new THREE.Group();
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.65,0.72,4.6,14), colMat);
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.95,0.95,0.4,14), colMat);
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.95,0.95,0.45,14), colMat);
-        shaft.position.y = 2.3; cap.position.y = 4.8; base.position.y = 0.22;
-        col.add(shaft, cap, base);
-        col.position.set(x,0,z);
-        col.rotation.y = (Math.random()-0.5)*0.05;
-        col.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; } });
-        world.add(col);
-      };
-      addColumn(-4.6); addColumn(4.6);
-    }
-
-    // --- player: billboard (custom sprite as MAIN character, like original)
-    const makeBillboard = (tex)=>{ const m=new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide}); const g=new THREE.PlaneGeometry(1,1.8); const mesh=new THREE.Mesh(g,m); mesh.userData.isBillboard=true; mesh.castShadow=true; return mesh; };
-    const player = new THREE.Group(); let heroTexture, heroSprite;
-    (function(){ const c=document.createElement('canvas'); c.width=128; c.height=256; const f=c.getContext('2d'); f.fillStyle='#2b2b2b'; f.fillRect(0,0,128,256); f.fillStyle='#fff'; f.fillRect(22,32,28,28); heroTexture=new THREE.CanvasTexture(c); heroSprite=makeBillboard(heroTexture); heroSprite.position.set(0,0.9,0); player.add(heroSprite); scene.add(player); })();
-    document.getElementById('file').addEventListener('change',(e)=>{ const file=e.target.files[0]; if(!file) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ const tex=new THREE.Texture(img); tex.needsUpdate=true; heroTexture=tex; heroSprite.material.map=tex; }; img.src=r.result; }; r.readAsDataURL(file); });
-
-    // --- controls & look
-    const keys = {}; addEventListener('keydown',e=>keys[e.code]=true); addEventListener('keyup',e=>keys[e.code]=false);
-    const press=(el,code)=>{const d=()=>keys[code]=true,u=()=>keys[code]=false; el.addEventListener('touchstart',e=>{e.preventDefault();d();}); el.addEventListener('touchend',u); el.addEventListener('touchcancel',u); el.addEventListener('mousedown',d); el.addEventListener('mouseup',u); el.addEventListener('mouseleave',u);};
-    press(document.getElementById('mvL'),'ArrowLeft'); press(document.getElementById('mvR'),'ArrowRight'); press(document.getElementById('mvF'),'ArrowUp'); press(document.getElementById('mvB'),'ArrowDown');
-    let yaw=0,pitch=0,dragging=false,lx=0,ly=0; const onDragStart=(x,y)=>{dragging=true;lx=x;ly=y;}; const onDragMove=(x,y)=>{if(!dragging)return;const dx=x-lx,dy=y-ly;lx=x;ly=y;yaw-=dx*0.0025; pitch=Math.max(-1.2,Math.min(1.2,pitch-dy*0.002));}; const onDragEnd=()=>{dragging=false;};
-    renderer.domElement.addEventListener('mousedown',e=>onDragStart(e.clientX,e.clientY)); addEventListener('mousemove',e=>onDragMove(e.clientX,e.clientY)); addEventListener('mouseup',onDragEnd);
-    renderer.domElement.addEventListener('touchstart',e=>{const t=e.touches[0]; onDragStart(t.clientX,t.clientY);},{passive:false}); renderer.domElement.addEventListener('touchmove',e=>{const t=e.touches[0]; onDragMove(t.clientX,t.clientY); e.preventDefault();},{passive:false}); renderer.domElement.addEventListener('touchend',onDragEnd);
-
-    // --- Z projectile
-    const zCanvas=document.createElement('canvas'); zCanvas.width=zCanvas.height=64; const zctx=zCanvas.getContext('2d'); zctx.fillStyle='#0000'; zctx.fillRect(0,0,64,64); zctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#f4d444'; zctx.font='bold 48px sans-serif'; zctx.fillText('Z',18,48); const zTex=new THREE.CanvasTexture(zCanvas);
-    const projectiles=[]; function fireZ(){ const mat=new THREE.MeshBasicMaterial({map:zTex,transparent:true,side:THREE.DoubleSide}); const geo=new THREE.PlaneGeometry(0.7,0.7); const mesh=new THREE.Mesh(geo,mat); mesh.position.copy(player.position).add(new THREE.Vector3(0,1,0)); const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ')); mesh.userData.vel=dir.multiplyScalar(16); mesh.userData.life=4; mesh.userData.isBillboard=true; scene.add(mesh); projectiles.push(mesh);} addEventListener('keydown',e=>{ if(e.code==='KeyZ') fireZ(); }); btnFire.addEventListener('click', fireZ);
-
-    // --- coins (score)
-    const coins=[]; const coinMat=new THREE.MeshStandardMaterial({ color:0xe5c14c, emissive:0xffd966, emissiveIntensity:0.25, metalness:0.8, roughness:0.3 });
-    for(let i=0;i<50;i++){ const coin=new THREE.Mesh(new THREE.TorusGeometry(0.25,0.08,12,24), coinMat); coin.rotation.x=Math.PI/2; coin.position.set((Math.random()*120-60),0.6,-(10+i*6)+(Math.random()*6-3)); coin.castShadow=true; coin.receiveShadow=true; scene.add(coin); coins.push(coin); }
-
-    // --- knowledge pickups (wisdom)
-    const knowledge=[]; const knowMat=new THREE.MeshBasicMaterial({ color:0x9b86ff });
-    for(let i=0;i<22;i++){ const k=new THREE.Mesh(new THREE.IcosahedronGeometry(0.22,0), knowMat); k.position.set((Math.random()*140-70),0.5,-(15+i*10)+(Math.random()*10-5)); scene.add(k); knowledge.push(k); }
-
-    // ===== EnemyChaser (user-provided visual spec) =====
-// Ported from your EnemyChaser package: real shoulder/hip pivots, gold Z at 50% of head size.
-class EnemyChaser{
-  constructor({scene,spawn,maxSpeed=6.3,accel=12}){
-    this.maxSpeed=maxSpeed; this.accel=accel; this._vel=new THREE.Vector3();
-    const mats={ black: this._black(), gold: this._gold(0xD4AF37) };
-    const built=this._buildStickman(mats.black, mats.gold);
-    this.mesh=built.group; this.mesh.position.copy(spawn||new THREE.Vector3());
-    this.mesh.traverse(o=>{ if(o.isMesh){ o.castShadow=o.receiveShadow=true; } });
-    scene.add(this.mesh);
-  }
-  _gold(hex){ return new THREE.MeshStandardMaterial({ color:hex, metalness:1.0, roughness:0.25, emissive:0x332200, emissiveIntensity:0.25 }); }
-  _black(){ return new THREE.MeshStandardMaterial({ color:0x000000, metalness:0.0, roughness:0.9 }); }
-  _buildZ(goldMat){
-    const g=new THREE.Group(); const t=0.34, w=2.1, d=0.28;
-    const top=new THREE.Mesh(new THREE.BoxGeometry(w,t,d),goldMat); top.position.set(0,0.55,0); g.add(top);
-    const diag=new THREE.Mesh(new THREE.BoxGeometry(2.0,t,d),goldMat); diag.rotation.z=-Math.PI/4; diag.position.set(0.12,0,0); g.add(diag);
-    const bot=new THREE.Mesh(new THREE.BoxGeometry(w,t,d),goldMat); bot.position.set(0,-0.95,0); g.add(bot);
-    return g;
-  }
-  _buildStickman(blackMat, goldMat){
-    const group=new THREE.Group();
-    const headRadius=0.5, torsoRadius=0.28, torsoLen=1.8;
-    const torso=new THREE.Mesh(new THREE.CapsuleGeometry(torsoRadius,torsoLen,8,12),blackMat); torso.position.y=1.9; group.add(torso);
-    const head=new THREE.Mesh(new THREE.SphereGeometry(headRadius,20,16),blackMat); head.position.y=3.3; group.add(head);
-    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.25,12),blackMat); neck.position.y=3.0; group.add(neck);
-    const pelvis=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.35,12),blackMat); pelvis.position.y=1.7; group.add(pelvis);
-    // Arms with shoulder pivots
-    const armLen=1.9, armR=0.12, armGeo=new THREE.CapsuleGeometry(armR,armLen,6,10);
-    const makeArm=(side)=>{ const shoulder=new THREE.Object3D(); shoulder.position.set(0.95*side,2.6,0.15); const mesh=new THREE.Mesh(armGeo,blackMat); mesh.position.y=-(armLen/2+armR); shoulder.add(mesh); group.add(shoulder); return shoulder; };
-    const lShoulder=makeArm(-1), rShoulder=makeArm(1);
-    lShoulder.rotation.x=rShoulder.rotation.x=Math.PI/2.3; lShoulder.rotation.z= Math.PI/16; rShoulder.rotation.z=-Math.PI/16;
-    // Legs with hip pivots
-    const legLen=2.2, legR=0.14, legGeo=new THREE.CapsuleGeometry(legR,legLen,6,10);
-    const makeLeg=(side)=>{ const hip=new THREE.Object3D(); hip.position.set(0.45*side,1.7,0); const mesh=new THREE.Mesh(legGeo,blackMat); mesh.position.y=-(legLen/2+legR); hip.add(mesh); group.add(hip); return hip; };
-    const lHip=makeLeg(-1), rHip=makeLeg(1); lHip.rotation.x=Math.PI/7; lHip.position.z= 0.12; rHip.rotation.x=-Math.PI/7; rHip.position.z=-0.12;
-    // String + Gold Z (50% of head diameter)
-    const stringLen=1.6; const string=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,stringLen,8),blackMat); string.rotation.x=Math.PI/2; string.position.set(0, head.position.y, stringLen/2+0.05); group.add(string);
-    const z=this._buildZ(goldMat); const baseZHeight=1.5; const desiredZHeight=(headRadius*2)*0.5; const scale=desiredZHeight/baseZHeight; z.scale.setScalar(scale); z.position.set(0, head.position.y, stringLen+0.6); group.add(z);
-    return { group };
-  }
-  update(dt,target){
-    if(!target) return; const to=new THREE.Vector3().subVectors(target,this.mesh.position); to.y=0; const d=to.length(); if(d>1e-3) to.multiplyScalar(1/d);
-    const desired=to.multiplyScalar(this.maxSpeed); const steer=desired.sub(this._vel).clampLength(0,this.accel*dt); this._vel.add(steer);
-    this.mesh.position.x+=this._vel.x*dt; this.mesh.position.z+=this._vel.z*dt;
-    if(this._vel.lengthSq()>1e-4) this.mesh.rotation.y=Math.atan2(this._vel.x,this._vel.z);
-  }
+const LEVELS=[
+  {name:'I. The Dunes of Now', story:'You awaken in the Now: a vast living desert outside the Temple. Recover 10 relic coins to remember your path.', fog:[0xceb98f,30,190], sky:[0xf2c78f,0x7fb2ff], enemyTarget:10, coinGoal:10, wisdomGoal:0, time:120, terrain:'dunes'},
+  {name:'II. Pilgrim Road', story:'The colonnade to the Temple is guarded. Collect 6 wisdom crystals and survive the black chasers.', fog:[0xaebdcf,25,170], sky:[0xd9a980,0x6f95d1], enemyTarget:18, coinGoal:0, wisdomGoal:6, time:110, terrain:'road'},
+  {name:'III. Temple Threshold', story:'At the threshold, defeat 24 chasers and open the Z portal to finish the legend.', fog:[0x96a8bc,22,150], sky:[0xc69973,0x4f6fa6], enemyTarget:24, coinGoal:0, wisdomGoal:0, time:100, terrain:'temple'}
+];
+let levelIndex=0,score=0,lives=3,timeLeft=120,spawned=0,active=0,knowledgeCount=0,coinCount=0;
+const hud=document.getElementById('hud'),ovTitle=document.getElementById('ovTitle'),ovText=document.getElementById('ovText'),overlay=document.getElementById('overlay');
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene(); const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000); camera.position.set(0,2.2,6);
+const hemi=new THREE.HemisphereLight(0xffffff,0x8b6d45,0.55); scene.add(hemi); const sun=new THREE.DirectionalLight(0xffffff,1); sun.position.set(50,60,20); sun.castShadow=true; scene.add(sun);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(420,420),new THREE.MeshStandardMaterial({color:0xcfb385,roughness:0.95})); ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+const world=new THREE.Group(); scene.add(world);
+const player=new THREE.Mesh(new THREE.CapsuleGeometry(0.35,1.1,8,12),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.15,metalness:0.35})); player.position.y=1; player.castShadow=true; scene.add(player);
+const portal=new THREE.Mesh(new THREE.RingGeometry(0.8,1.3,64),new THREE.MeshBasicMaterial({color:0x8ad0ff,transparent:true,opacity:0.9})); portal.visible=false; scene.add(portal);
+const enemies=[],coins=[],knowledge=[],projectiles=[];
+function clearArr(arr){ while(arr.length){ const o=arr.pop(); scene.remove(o.mesh||o); } }
+function buildWorld(){ while(world.children.length) world.remove(world.children[0]); const L=LEVELS[levelIndex]; scene.fog=new THREE.Fog(...L.fog); document.body.style.background='#0b0b0b';
+  for(let i=0;i<55;i++){ const d=new THREE.Mesh(new THREE.SphereGeometry(2+Math.random()*4,14,10),new THREE.MeshStandardMaterial({color:0xc8ae7f,roughness:0.97})); d.scale.set(1.8,0.3+Math.random()*0.2,1.8); d.position.set(Math.random()*340-170,-0.4,Math.random()*340-170); if(d.position.length()<16) continue; d.castShadow=d.receiveShadow=true; world.add(d);} 
+  if(L.terrain!=='dunes'){ for(let i=0;i<14;i++){ const z=-15-i*9; for(const x of [-4.6,4.6]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,4.6,12),new THREE.MeshStandardMaterial({color:0xa09789})); c.position.set(x,2.3,z); c.castShadow=c.receiveShadow=true; world.add(c);} } }
+  if(L.terrain==='temple'){ const temple=new THREE.Mesh(new THREE.BoxGeometry(12,7,12),new THREE.MeshStandardMaterial({color:0x6f6759,roughness:0.9})); temple.position.set(0,3.5,-140); temple.castShadow=temple.receiveShadow=true; world.add(temple); portal.position.set(0,2.5,-134);} else portal.position.set(0,1.8,-145);
 }
-
-// --- enemies: chasers spawned by wave manager
-    const enemies=[];
-    function spawnEnemy(){
-      const a=Math.random()*Math.PI*2; const d=24+Math.random()*18;
-      const spawn=new THREE.Vector3(player.position.x+Math.cos(a)*d,0,player.position.z+Math.sin(a)*d);
-      const e=new EnemyChaser({scene,spawn,maxSpeed:ENEMY_SPEED});
-      enemies.push(e); spawnedCount++; activeCount++;
-    }
-
-    // --- temple base (portal appears here after last wave)
-    const templeBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.4,1.2, 32), new THREE.MeshStandardMaterial({ color:0x555555, roughness:0.9 }));
-    templeBase.position.set(0,0.6,-140); templeBase.receiveShadow=true; templeBase.castShadow=true; scene.add(templeBase);
-
-    const templeBody = new THREE.Group();
-    const templeFloor = new THREE.Mesh(new THREE.BoxGeometry(11,1.3,11), new THREE.MeshStandardMaterial({ color:0x8f8676, roughness:0.9 }));
-    templeFloor.position.y = 0.65;
-    templeFloor.castShadow = templeFloor.receiveShadow = true;
-    templeBody.add(templeFloor);
-    const templeRoof = new THREE.Mesh(new THREE.ConeGeometry(7.4,3.4,4), new THREE.MeshStandardMaterial({ color:0x73685a, roughness:0.95 }));
-    templeRoof.position.y = 3.1;
-    templeRoof.rotation.y = Math.PI/4;
-    templeRoof.castShadow = templeRoof.receiveShadow = true;
-    templeBody.add(templeRoof);
-    for(let i=0;i<4;i++){
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.58,0.58,3.6,14), colMat);
-      col.position.set((i<2?-1:1)*2.7,1.8,(i%2?-1:1)*2.7);
-      col.castShadow = col.receiveShadow = true;
-      templeBody.add(col);
-    }
-    templeBody.position.set(0,0,-140);
-    scene.add(templeBody);
-
-    // Portal ring (hidden until waves cleared)
-    const portalGeo = new THREE.RingGeometry(0.8,1.3,64);
-    const portalMat = new THREE.MeshBasicMaterial({color:0x8ad0ff, transparent:true, opacity:0.9});
-    const portal = new THREE.Mesh(portalGeo, portalMat); portal.position.set(0,1.6,-140); portal.visible=false; scene.add(portal);
-
-    // Simple synthesized portal sound (no external file)
-    let audioCtx, portalBuffer; function primeAudio(){ if(audioCtx) return; audioCtx=new (window.AudioContext||window.webkitAudioContext)(); const sr=audioCtx.sampleRate, dur=0.9, len=sr*dur, data=new Float32Array(len); for(let i=0;i<len;i++){ const t=i/sr; const env=Math.min(1,t/0.05)*Math.exp(-3*t); const n=(Math.random()*2-1)*0.35*env*(1-Math.min(1,t/0.5)); const f=440*Math.pow(2, t*1.2); const s=Math.sin(2*Math.PI*f*t)*0.4*env; data[i]=n+s; } portalBuffer=audioCtx.createBuffer(1,len,sr); portalBuffer.getChannelData(0).set(data);} function playPortal(){ if(!audioCtx||!portalBuffer) return; const src=audioCtx.createBufferSource(); src.buffer=portalBuffer; src.connect(audioCtx.destination); src.start(); }
-
-    // --- postprocessing (bloom like original)
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene,camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.6, 0.8, 0.85));
-
-    // --- state machine + UI
-    const GAME = { MENU:'MENU', RUN:'RUN', PAUSE:'PAUSE', WIN:'WIN', FAIL:'FAIL', PORTAL:'PORTAL' }; let gameState = GAME.MENU;
-    function showOverlay(mode){ overlay.classList.add('visible'); btnOverlayResume.style.display = (mode==='PAUSE')?'' : 'none'; btnOverlayRestart.style.display= (mode==='PAUSE'||mode==='WIN'||mode==='FAIL')?'' : 'none'; }
-    function hideOverlay(){ overlay.classList.remove('visible'); }
-
-    btnPlay.onclick = ()=>{ primeAudio(); gameState=GAME.RUN; hideOverlay(); };
-    btnOverlayResume.onclick = ()=>{ gameState=GAME.RUN; hideOverlay(); btnPause.style.display=''; btnResume.style.display='none'; };
-    btnOverlayRestart.onclick= ()=>{ resetGame(); gameState=GAME.RUN; hideOverlay(); btnPause.style.display=''; btnResume.style.display='none'; };
-
-    btnPause.onclick = ()=>{ if(gameState===GAME.RUN||gameState===GAME.PORTAL){ gameState=GAME.PAUSE; showOverlay('PAUSE'); btnPause.style.display='none'; btnResume.style.display=''; } };
-    btnResume.onclick= ()=>{ if(gameState===GAME.PAUSE){ gameState=GAME.RUN; hideOverlay(); btnPause.style.display=''; btnResume.style.display='none'; } };
-    btnRestart.onclick= ()=>{ resetGame(); gameState=GAME.RUN; hideOverlay(); btnPause.style.display=''; btnResume.style.display='none'; };
-
-    // --- reset
-    let score=0, lives=3, wisdom=0;
-    function resetGame(){
-      score=0; lives=3; wisdom=0; timeLeft=90; waveIndex=0; spawnedCount=0; activeCount=0; spawnInterval=1.2; spawnTimer=0;
-      player.position.set(0,0,0); yaw=0; pitch=0;
-      enemies.forEach(e=>scene.remove(e.mesh)); enemies.length=0;
-      projectiles.forEach(p=>scene.remove(p)); projectiles.length=0;
-      coins.forEach(c=>{ if(!c.parent) scene.add(c); c.visible=true; });
-      knowledge.forEach(k=>{ if(!k.parent) scene.add(k); k.visible=true; });
-      templeBase.position.set(0,0.6,-140); portal.visible=false; portal.scale.set(1,1,1);
-      templeBody.position.set(0,0,-140);
-    }
-
-    // --- main loop
-    let last=performance.now();
-    function loop(t){
-      const dt=Math.min(0.033,(t-last)/1000); last=t;
-
-      // rotate with keys (Left/Right or Q/E)
-      if(keys['ArrowLeft']||keys['KeyQ'])  yaw += 2.4*dt;
-      if(keys['ArrowRight']||keys['KeyE']) yaw -= 2.4*dt;
-
-      // camera orbit behind player
-      const dir = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
-      camera.position.copy(player.position).add(dir.clone().multiplyScalar(-6)).add({x:0,y:2.2,z:0});
-      camera.lookAt(player.position.x, player.position.y+1, player.position.z);
-
-      if(gameState===GAME.RUN || gameState===GAME.PORTAL){
-        // timer and fail
-        timeLeft -= dt; if(timeLeft<=0){ gameState=GAME.FAIL; showOverlay('FAIL'); }
-
-        // movement
-        const forward=new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw));
-        const right=new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0,1,0));
-        const accel=new THREE.Vector3();
-        if(keys['KeyW']||keys['ArrowUp'])    accel.add(forward);
-        if(keys['KeyS']||keys['ArrowDown']) accel.add(forward.clone().multiplyScalar(-1));
-        if(keys['KeyA']) accel.add(right.clone().multiplyScalar(-1));
-        if(keys['KeyD']) accel.add(right);
-        if(accel.length()>0) accel.normalize().multiplyScalar(PLAYER_SPEED*dt);
-        player.position.add(accel);
-        player.position.y = 0; // ground lock
-
-        // face camera for billboards
-        scene.traverse(o=>{ if(o.userData && o.userData.isBillboard){ o.lookAt(camera.position); } });
-
-        // pickups
-        for(let i=coins.length-1;i>=0;i--){ const c=coins[i]; c.rotation.y += dt*4; if(c.visible && player.position.distanceTo(c.position) < 1.0){ c.visible=false; scene.remove(c); score+=10; } }
-        for(let i=knowledge.length-1;i>=0;i--){ const k=knowledge[i]; if(k.visible && player.position.distanceTo(k.position) < 1.0){ k.visible=false; scene.remove(k); wisdom+=1; } }
-
-        if(gameState===GAME.RUN){
-          const target = WAVES[waveIndex];
-          // spawn pacing
-          if(spawnedCount < target){ spawnTimer -= dt; if(spawnTimer<=0){ spawnEnemy(); spawnTimer = Math.max(0.7, spawnInterval); } }
-
-          // enemies update + collisions
-          for(let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; e.update(dt, player.position);
-            // hit by Z (planar XZ radius, reliable)
-            for(let j=projectiles.length-1;j>=0;j--){
-              const p=projectiles[j];
-              const dx=p.position.x - e.mesh.position.x; const dz=p.position.z - e.mesh.position.z;
-              if(dx*dx+dz*dz < 1.44){ // 1.2^2
-                scene.remove(p); projectiles.splice(j,1);
-                scene.remove(e.mesh); enemies.splice(i,1); activeCount--; score+=50; break;
-              }
-            }
-            if(!enemies[i]) continue; // removed by hit
-            const dx=e.mesh.position.x-player.position.x, dz=e.mesh.position.z-player.position.z; if(dx*dx+dz*dz<1.2*1.2){ lives--; scene.remove(e.mesh); enemies.splice(i,1); activeCount--; }
-          }
-
-          // projectiles step
-          for(let i=projectiles.length-1;i>=0;i--){ const p=projectiles[i]; p.position.add(p.userData.vel.clone().multiplyScalar(dt)); p.userData.life -= dt; if(p.userData.life<=0){ scene.remove(p); projectiles.splice(i,1); } }
-
-          // wave finished?
-          if(spawnedCount>=target && activeCount===0){
-            waveIndex++;
-            if(waveIndex < WAVES.length){ spawnedCount=0; spawnInterval=Math.max(0.7, spawnInterval*0.9); }
-            else { gameState=GAME.PORTAL; portal.visible=true; }
-          }
-        }
-
-        // portal phase
-        if(gameState===GAME.PORTAL){ const s=1+Math.sin(performance.now()/250)*0.08; portal.scale.set(s,s,1); portal.rotation.z += 0.01; if(player.position.distanceTo(portal.position)<1.6){ playPortal(); gameState=GAME.WIN; showOverlay('WIN'); } }
-      }
-
-      const m=Math.max(0,Math.floor(timeLeft/60)), s=Math.max(0,Math.floor(timeLeft%60)).toString().padStart(2,'0');
-      const left = (gameState===GAME.PORTAL||gameState===GAME.WIN)? 0 : Math.max(0,(WAVES[waveIndex]||0)-spawnedCount+activeCount);
-      hud.textContent = `Wave ${Math.min(waveIndex+1,WAVES.length)}/${WAVES.length} · Left: ${left} · Time ${m}:${s} · Score: ${score} · Wisdom: ${wisdom} · Lives: ${lives}`;
-
-      renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
-      composer.setSize(innerWidth, innerHeight); composer.render();
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-
-    // ==================
-    // Dev sanity tests
-    // ==================
-    (function selfTests(){
-      try{
-        console.log('%c[Tests] Running basic invariants…','color:#9cf');
-        console.assert(typeof EnemyChaser === 'function', 'EnemyChaser should exist');
-        const t0=timeLeft; resetGame(); console.assert(timeLeft===90, 'reset sets timeLeft=90');
-        console.assert(waveIndex===0 && spawnedCount===0 && activeCount===0, 'reset clears wave counters');
-        spawnEnemy(); console.assert(enemies.length===1 && activeCount===1, 'spawnEnemy registers enemy');
-        // cleanup spawned
-        enemies.forEach(e=>scene.remove(e.mesh)); enemies.length=0; activeCount=0; spawnedCount=0;
-        console.log('%c[Tests] All basic checks passed.','color:#9f9');
-      }catch(err){ console.warn('Self-tests failed:', err); }
-    })();
-  </script>
+function spawnCollectibles(){ clearArr(coins); clearArr(knowledge); coinCount=0; knowledgeCount=0;
+  for(let i=0;i<18;i++){ const c=new THREE.Mesh(new THREE.TorusGeometry(0.25,0.08,12,24),new THREE.MeshStandardMaterial({color:0xf0c247,emissive:0x443300})); c.rotation.x=Math.PI/2; c.position.set(Math.random()*110-55,0.6,-(12+i*5)); c.castShadow=true; coins.push(c); scene.add(c);} 
+  for(let i=0;i<12;i++){ const k=new THREE.Mesh(new THREE.IcosahedronGeometry(0.22,0),new THREE.MeshBasicMaterial({color:0xa285ff})); k.position.set(Math.random()*115-57,0.5,-(10+i*8)); knowledge.push(k); scene.add(k);} }
+class Enemy{ constructor(pos){ this.mesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.3,1.5,6,8),new THREE.MeshStandardMaterial({color:0x101010})); this.mesh.position.copy(pos); this.mesh.position.y=1; this.v=new THREE.Vector3(); scene.add(this.mesh);} update(dt){ const to=player.position.clone().sub(this.mesh.position); to.y=0; if(to.length()>0.001) to.normalize(); const desired=to.multiplyScalar(6.2); this.v.add(desired.sub(this.v).clampLength(0,10*dt)); this.mesh.position.add(this.v.clone().multiplyScalar(dt)); this.mesh.lookAt(player.position.x,this.mesh.position.y,player.position.z);} }
+function spawnEnemy(){ const a=Math.random()*Math.PI*2,d=20+Math.random()*20; const p=new THREE.Vector3(player.position.x+Math.cos(a)*d,0,player.position.z+Math.sin(a)*d); enemies.push(new Enemy(p)); spawned++; active++; }
+function fire(){ const p=new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.7),new THREE.MeshBasicMaterial({color:0xf4d444,side:THREE.DoubleSide})); p.position.copy(player.position); p.position.y=1; p.userData.v=new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw)).multiplyScalar(16); p.userData.life=3; scene.add(p); projectiles.push(p); }
+let yaw=0,state='menu'; const keys={}; addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyZ') fire();}); addEventListener('keyup',e=>keys[e.code]=false);
+for(const [id,key] of [['mvL','ArrowLeft'],['mvR','ArrowRight'],['mvF','ArrowUp'],['mvB','ArrowDown']]){ const el=document.getElementById(id); el.onmousedown=()=>keys[key]=true; el.onmouseup=()=>keys[key]=false; }
+document.getElementById('btnFire').onclick=fire;
+function setLevel(i){ levelIndex=i; const L=LEVELS[i]; timeLeft=L.time; spawned=0; active=0; player.position.set(0,1,0); portal.visible=false; clearArr(enemies); clearArr(projectiles); buildWorld(); spawnCollectibles(); ovTitle.textContent=L.name; ovText.textContent=L.story; }
+function completeLevel(){ if(levelIndex<LEVELS.length-1){ state='menu'; setLevel(levelIndex+1); overlay.style.display='flex'; document.getElementById('btnPlay').textContent='Next Level'; } else { state='win'; ovTitle.textContent='Legend Complete'; ovText.textContent='You crossed Now and entered the Temple of Z.'; overlay.style.display='flex'; }}
+document.getElementById('btnPlay').onclick=()=>{ state='run'; overlay.style.display='none'; };
+document.getElementById('btnRestart').onclick=()=>{ score=0;lives=3; setLevel(0); state='menu'; overlay.style.display='flex';};
+document.getElementById('btnPause').onclick=()=>state='pause'; document.getElementById('btnResume').onclick=()=>state='run';
+const composer=new EffectComposer(renderer); composer.addPass(new RenderPass(scene,camera)); composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.7,0.9));
+setLevel(0);
+let last=performance.now();
+function loop(t){ const dt=Math.min(0.033,(t-last)/1000); last=t; if(keys.ArrowLeft||keys.KeyQ) yaw+=2.4*dt; if(keys.ArrowRight||keys.KeyE) yaw-=2.4*dt; const forward=new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw)); const right=new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0,1,0));
+if(state==='run'){ timeLeft-=dt; if(timeLeft<=0||lives<=0){ state='menu'; ovTitle.textContent='You fell out of Now'; ovText.textContent='Retry the current level.'; overlay.style.display='flex'; }
+  const move=new THREE.Vector3(); if(keys.KeyW||keys.ArrowUp) move.add(forward); if(keys.KeyS||keys.ArrowDown) move.add(forward.clone().multiplyScalar(-1)); if(keys.KeyA) move.add(right.clone().multiplyScalar(-1)); if(keys.KeyD) move.add(right); if(move.length()) player.position.add(move.normalize().multiplyScalar(8*dt));
+  const L=LEVELS[levelIndex]; if(spawned<L.enemyTarget){ if(Math.random()<dt*1.4) spawnEnemy(); }
+  for(let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; e.update(dt); for(let j=projectiles.length-1;j>=0;j--){ if(e.mesh.position.distanceTo(projectiles[j].position)<1.2){ scene.remove(e.mesh); enemies.splice(i,1); active--; scene.remove(projectiles[j]); projectiles.splice(j,1); score+=50; break; } } if(enemies[i]&&e.mesh.position.distanceTo(player.position)<1.2){ lives--; scene.remove(e.mesh); enemies.splice(i,1); active--; } }
+  for(let i=projectiles.length-1;i>=0;i--){ const p=projectiles[i]; p.position.add(p.userData.v.clone().multiplyScalar(dt)); p.userData.life-=dt; if(p.userData.life<=0){ scene.remove(p); projectiles.splice(i,1);} }
+  for(const c of coins){ if(c.visible&&player.position.distanceTo(c.position)<1){c.visible=false; coinCount++; score+=10;} }
+  for(const k of knowledge){ if(k.visible&&player.position.distanceTo(k.position)<1){k.visible=false; knowledgeCount++; score+=25;} }
+  if(levelIndex===LEVELS.length-1 && spawned>=L.enemyTarget && active===0){ portal.visible=true; portal.rotation.z+=dt*2; if(player.position.distanceTo(portal.position)<1.7) completeLevel(); }
+  if(levelIndex<LEVELS.length-1){ if((L.coinGoal===0||coinCount>=L.coinGoal) && (L.wisdomGoal===0||knowledgeCount>=L.wisdomGoal) && spawned>=L.enemyTarget && active===0) completeLevel(); }
+}
+camera.position.copy(player.position).add(forward.clone().multiplyScalar(-6)).add(new THREE.Vector3(0,2.6,0)); camera.lookAt(player.position.x,player.position.y+0.8,player.position.z);
+const L=LEVELS[levelIndex]; hud.textContent=`${L.name} · Time ${Math.max(0,Math.floor(timeLeft/60))}:${Math.max(0,Math.floor(timeLeft%60)).toString().padStart(2,'0')} · Enemies ${Math.max(0,L.enemyTarget-spawned+active)} · Coins ${coinCount}/${L.coinGoal||'-'} · Wisdom ${knowledgeCount}/${L.wisdomGoal||'-'} · Score ${score} · Lives ${lives}`;
+renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); composer.setSize(innerWidth,innerHeight); composer.render(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
 </body>
 </html>

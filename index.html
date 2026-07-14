@@ -3,84 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-  <title>Legend of Now – Temple of Z (Story Levels)</title>
+  <title>Legend of Now – Temple of Z</title>
   <style>
     :root { --fg:#fff; --bg:#0b0b0b; --glass:#ffffff2a; --accent:#f4d444; }
     html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);overflow:hidden;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    #hud{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;font-weight:700;text-shadow:0 1px 2px #0008}
+    #hud{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:20;font-weight:700;text-shadow:0 1px 2px #0008;white-space:nowrap}
     #toolbar{position:fixed;top:8px;left:8px;display:flex;gap:8px;z-index:30}
     .btn{border:0;border-radius:10px;padding:8px 12px;background:var(--glass);color:#fff;font-weight:700;backdrop-filter:blur(4px)}
+    .btn:disabled{opacity:0.5}
     #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0009;backdrop-filter:blur(2px);z-index:40}
     #overlay .card{background:#111c;border:1px solid #ffffff22;border-radius:16px;padding:20px;min-width:min(92vw,560px);display:flex;flex-direction:column;gap:10px;align-items:center}
     #controls{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:35}
-    #controls button{width:64px;height:64px;border:0;border-radius:12px;background:var(--glass);color:#fff;font-size:22px}
+    #controls button{width:64px;height:64px;border:0;border-radius:12px;background:var(--glass);color:#fff;font-size:22px;touch-action:none}
+    #powerwrap{position:fixed;top:34px;left:50%;transform:translateX(-50%);width:180px;height:7px;border-radius:4px;background:#ffffff22;z-index:20;overflow:hidden}
+    #powerbar{height:100%;width:100%;background:var(--accent);border-radius:4px;transition:background 0.2s}
+    #subtitle{position:fixed;bottom:92px;left:50%;transform:translateX(-50%);max-width:min(92vw,640px);text-align:center;font-weight:600;font-size:17px;color:#ffe9b0;text-shadow:0 1px 3px #000c;background:#0008;border-radius:10px;padding:8px 14px;z-index:25;opacity:0;transition:opacity 0.4s;pointer-events:none}
+    #hint{position:fixed;top:48px;left:50%;transform:translateX(-50%);font-size:12px;opacity:0.65;z-index:20}
   </style>
-  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.158.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.158.0/examples/jsm/"}}</script>
+  <script type="importmap">{"imports":{"three":"./lib/three/three.module.js","three/addons/":"./lib/three/addons/"}}</script>
 </head>
 <body>
 <div id="hud"></div>
-<div id="toolbar"><button id="btnPause" class="btn">⏸</button><button id="btnResume" class="btn" style="display:none">⏵</button><button id="btnRestart" class="btn">⟲</button></div>
-<div id="controls"><button id="mvL">◀︎</button><button id="mvB">▼</button><button id="mvF">▲</button><button id="mvR">▶︎</button><button id="btnFire">Z</button></div>
-<div id="overlay"><div class="card"><h1 id="ovTitle">Temple of Z</h1><p id="ovText"></p><button id="btnPlay" class="btn">Start Story</button></div></div>
-<script type="module">
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-
-const LEVELS=[
-  {name:'I. The Dunes of Now', story:'You awaken in the Now: a vast living desert outside the Temple. Recover 10 relic coins to remember your path.', fog:[0xceb98f,30,190], sky:[0xf2c78f,0x7fb2ff], enemyTarget:10, coinGoal:10, wisdomGoal:0, time:120, terrain:'dunes'},
-  {name:'II. Pilgrim Road', story:'The colonnade to the Temple is guarded. Collect 6 wisdom crystals and survive the black chasers.', fog:[0xaebdcf,25,170], sky:[0xd9a980,0x6f95d1], enemyTarget:18, coinGoal:0, wisdomGoal:6, time:110, terrain:'road'},
-  {name:'III. Temple Threshold', story:'At the threshold, defeat 24 chasers and open the Z portal to finish the legend.', fog:[0x96a8bc,22,150], sky:[0xc69973,0x4f6fa6], enemyTarget:24, coinGoal:0, wisdomGoal:0, time:100, terrain:'temple'}
-];
-let levelIndex=0,score=0,lives=3,timeLeft=120,spawned=0,active=0,knowledgeCount=0,coinCount=0;
-const hud=document.getElementById('hud'),ovTitle=document.getElementById('ovTitle'),ovText=document.getElementById('ovText'),overlay=document.getElementById('overlay');
-const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; document.body.appendChild(renderer.domElement);
-const scene=new THREE.Scene(); const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000); camera.position.set(0,2.2,6);
-const hemi=new THREE.HemisphereLight(0xffffff,0x8b6d45,0.55); scene.add(hemi); const sun=new THREE.DirectionalLight(0xffffff,1); sun.position.set(50,60,20); sun.castShadow=true; scene.add(sun);
-const ground=new THREE.Mesh(new THREE.PlaneGeometry(420,420),new THREE.MeshStandardMaterial({color:0xcfb385,roughness:0.95})); ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
-const world=new THREE.Group(); scene.add(world);
-const player=new THREE.Mesh(new THREE.CapsuleGeometry(0.35,1.1,8,12),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.15,metalness:0.35})); player.position.y=1; player.castShadow=true; scene.add(player);
-const portal=new THREE.Mesh(new THREE.RingGeometry(0.8,1.3,64),new THREE.MeshBasicMaterial({color:0x8ad0ff,transparent:true,opacity:0.9})); portal.visible=false; scene.add(portal);
-const enemies=[],coins=[],knowledge=[],projectiles=[];
-function clearArr(arr){ while(arr.length){ const o=arr.pop(); scene.remove(o.mesh||o); } }
-function buildWorld(){ while(world.children.length) world.remove(world.children[0]); const L=LEVELS[levelIndex]; scene.fog=new THREE.Fog(...L.fog); document.body.style.background='#0b0b0b';
-  for(let i=0;i<55;i++){ const d=new THREE.Mesh(new THREE.SphereGeometry(2+Math.random()*4,14,10),new THREE.MeshStandardMaterial({color:0xc8ae7f,roughness:0.97})); d.scale.set(1.8,0.3+Math.random()*0.2,1.8); d.position.set(Math.random()*340-170,-0.4,Math.random()*340-170); if(d.position.length()<16) continue; d.castShadow=d.receiveShadow=true; world.add(d);} 
-  if(L.terrain!=='dunes'){ for(let i=0;i<14;i++){ const z=-15-i*9; for(const x of [-4.6,4.6]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,4.6,12),new THREE.MeshStandardMaterial({color:0xa09789})); c.position.set(x,2.3,z); c.castShadow=c.receiveShadow=true; world.add(c);} } }
-  if(L.terrain==='temple'){ const temple=new THREE.Mesh(new THREE.BoxGeometry(12,7,12),new THREE.MeshStandardMaterial({color:0x6f6759,roughness:0.9})); temple.position.set(0,3.5,-140); temple.castShadow=temple.receiveShadow=true; world.add(temple); portal.position.set(0,2.5,-134);} else portal.position.set(0,1.8,-145);
-}
-function spawnCollectibles(){ clearArr(coins); clearArr(knowledge); coinCount=0; knowledgeCount=0;
-  for(let i=0;i<18;i++){ const c=new THREE.Mesh(new THREE.TorusGeometry(0.25,0.08,12,24),new THREE.MeshStandardMaterial({color:0xf0c247,emissive:0x443300})); c.rotation.x=Math.PI/2; c.position.set(Math.random()*110-55,0.6,-(12+i*5)); c.castShadow=true; coins.push(c); scene.add(c);} 
-  for(let i=0;i<12;i++){ const k=new THREE.Mesh(new THREE.IcosahedronGeometry(0.22,0),new THREE.MeshBasicMaterial({color:0xa285ff})); k.position.set(Math.random()*115-57,0.5,-(10+i*8)); knowledge.push(k); scene.add(k);} }
-class Enemy{ constructor(pos){ this.mesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.3,1.5,6,8),new THREE.MeshStandardMaterial({color:0x101010})); this.mesh.position.copy(pos); this.mesh.position.y=1; this.v=new THREE.Vector3(); scene.add(this.mesh);} update(dt){ const to=player.position.clone().sub(this.mesh.position); to.y=0; if(to.length()>0.001) to.normalize(); const desired=to.multiplyScalar(6.2); this.v.add(desired.sub(this.v).clampLength(0,10*dt)); this.mesh.position.add(this.v.clone().multiplyScalar(dt)); this.mesh.lookAt(player.position.x,this.mesh.position.y,player.position.z);} }
-function spawnEnemy(){ const a=Math.random()*Math.PI*2,d=20+Math.random()*20; const p=new THREE.Vector3(player.position.x+Math.cos(a)*d,0,player.position.z+Math.sin(a)*d); enemies.push(new Enemy(p)); spawned++; active++; }
-function fire(){ const p=new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.7),new THREE.MeshBasicMaterial({color:0xf4d444,side:THREE.DoubleSide})); p.position.copy(player.position); p.position.y=1; p.userData.v=new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw)).multiplyScalar(16); p.userData.life=3; scene.add(p); projectiles.push(p); }
-let yaw=0,state='menu'; const keys={}; addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyZ') fire();}); addEventListener('keyup',e=>keys[e.code]=false);
-for(const [id,key] of [['mvL','ArrowLeft'],['mvR','ArrowRight'],['mvF','ArrowUp'],['mvB','ArrowDown']]){ const el=document.getElementById(id); el.onmousedown=()=>keys[key]=true; el.onmouseup=()=>keys[key]=false; }
-document.getElementById('btnFire').onclick=fire;
-function setLevel(i){ levelIndex=i; const L=LEVELS[i]; timeLeft=L.time; spawned=0; active=0; player.position.set(0,1,0); portal.visible=false; clearArr(enemies); clearArr(projectiles); buildWorld(); spawnCollectibles(); ovTitle.textContent=L.name; ovText.textContent=L.story; }
-function completeLevel(){ if(levelIndex<LEVELS.length-1){ state='menu'; setLevel(levelIndex+1); overlay.style.display='flex'; document.getElementById('btnPlay').textContent='Next Level'; } else { state='win'; ovTitle.textContent='Legend Complete'; ovText.textContent='You crossed Now and entered the Temple of Z.'; overlay.style.display='flex'; }}
-document.getElementById('btnPlay').onclick=()=>{ state='run'; overlay.style.display='none'; };
-document.getElementById('btnRestart').onclick=()=>{ score=0;lives=3; setLevel(0); state='menu'; overlay.style.display='flex';};
-document.getElementById('btnPause').onclick=()=>state='pause'; document.getElementById('btnResume').onclick=()=>state='run';
-const composer=new EffectComposer(renderer); composer.addPass(new RenderPass(scene,camera)); composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.7,0.9));
-setLevel(0);
-let last=performance.now();
-function loop(t){ const dt=Math.min(0.033,(t-last)/1000); last=t; if(keys.ArrowLeft||keys.KeyQ) yaw+=2.4*dt; if(keys.ArrowRight||keys.KeyE) yaw-=2.4*dt; const forward=new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw)); const right=new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0,1,0));
-if(state==='run'){ timeLeft-=dt; if(timeLeft<=0||lives<=0){ state='menu'; ovTitle.textContent='You fell out of Now'; ovText.textContent='Retry the current level.'; overlay.style.display='flex'; }
-  const move=new THREE.Vector3(); if(keys.KeyW||keys.ArrowUp) move.add(forward); if(keys.KeyS||keys.ArrowDown) move.add(forward.clone().multiplyScalar(-1)); if(keys.KeyA) move.add(right.clone().multiplyScalar(-1)); if(keys.KeyD) move.add(right); if(move.length()) player.position.add(move.normalize().multiplyScalar(8*dt));
-  const L=LEVELS[levelIndex]; if(spawned<L.enemyTarget){ if(Math.random()<dt*1.4) spawnEnemy(); }
-  for(let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; e.update(dt); for(let j=projectiles.length-1;j>=0;j--){ if(e.mesh.position.distanceTo(projectiles[j].position)<1.2){ scene.remove(e.mesh); enemies.splice(i,1); active--; scene.remove(projectiles[j]); projectiles.splice(j,1); score+=50; break; } } if(enemies[i]&&e.mesh.position.distanceTo(player.position)<1.2){ lives--; scene.remove(e.mesh); enemies.splice(i,1); active--; } }
-  for(let i=projectiles.length-1;i>=0;i--){ const p=projectiles[i]; p.position.add(p.userData.v.clone().multiplyScalar(dt)); p.userData.life-=dt; if(p.userData.life<=0){ scene.remove(p); projectiles.splice(i,1);} }
-  for(const c of coins){ if(c.visible&&player.position.distanceTo(c.position)<1){c.visible=false; coinCount++; score+=10;} }
-  for(const k of knowledge){ if(k.visible&&player.position.distanceTo(k.position)<1){k.visible=false; knowledgeCount++; score+=25;} }
-  if(levelIndex===LEVELS.length-1 && spawned>=L.enemyTarget && active===0){ portal.visible=true; portal.rotation.z+=dt*2; if(player.position.distanceTo(portal.position)<1.7) completeLevel(); }
-  if(levelIndex<LEVELS.length-1){ if((L.coinGoal===0||coinCount>=L.coinGoal) && (L.wisdomGoal===0||knowledgeCount>=L.wisdomGoal) && spawned>=L.enemyTarget && active===0) completeLevel(); }
-}
-camera.position.copy(player.position).add(forward.clone().multiplyScalar(-6)).add(new THREE.Vector3(0,2.6,0)); camera.lookAt(player.position.x,player.position.y+0.8,player.position.z);
-const L=LEVELS[levelIndex]; hud.textContent=`${L.name} · Time ${Math.max(0,Math.floor(timeLeft/60))}:${Math.max(0,Math.floor(timeLeft%60)).toString().padStart(2,'0')} · Enemies ${Math.max(0,L.enemyTarget-spawned+active)} · Coins ${coinCount}/${L.coinGoal||'-'} · Wisdom ${knowledgeCount}/${L.wisdomGoal||'-'} · Score ${score} · Lives ${lives}`;
-renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); composer.setSize(innerWidth,innerHeight); composer.render(); requestAnimationFrame(loop); }
-requestAnimationFrame(loop);
-</script>
+<div id="powerwrap"><div id="powerbar"></div></div>
+<div id="hint">WASD/arrows move · Q/E turn · Z fire · X/Shift = Now-shift</div>
+<div id="toolbar"><button id="btnPause" class="btn">⏸</button><button id="btnResume" class="btn">⏵</button><button id="btnRestart" class="btn">⟲</button></div>
+<div id="subtitle"></div>
+<div id="controls"><button id="mvL">◀︎</button><button id="mvB">▼</button><button id="mvF">▲</button><button id="mvR">▶︎</button><button id="btnFire">Z</button><button id="btnShift">◷</button></div>
+<div id="overlay"><div class="card"><h1 id="ovTitle">Temple of Z</h1><p id="ovText">Awakening the Now…</p><button id="btnPlay" class="btn" disabled>Loading…</button></div></div>
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>

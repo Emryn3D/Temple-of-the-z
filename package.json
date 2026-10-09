@@ -1,5 +1,15 @@
 {
   "name": "temple-of-the-z",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "smoke": "node scripts/smoke.mjs",
+    "check": "node scripts/check-manifest.mjs && node scripts/check-logic.mjs",
+    "bot": "node scripts/run-bot.mjs",
+    "agent": "node scripts/agent-bridge.mjs",
+    "test": "node scripts/smoke.mjs && node scripts/check-manifest.mjs && node scripts/check-logic.mjs && node scripts/agent-check.mjs && node scripts/bridge-check.mjs && node scripts/run-bot.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.0"
+  }
 }

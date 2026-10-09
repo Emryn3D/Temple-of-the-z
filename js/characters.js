@@ -106,6 +106,22 @@ export class Character {
     this.hitFlash = 0;
     this.dying = null;
     this._emoteT = 0;
+    this.lightweight = !!spec.lightweight;
+  }
+
+  // Headless sims skip skinning. Death and emote timers still elapse so the
+  // portal opens on the same tick it would in a full render.
+  _liteUpdate(dt) {
+    if (this._emoteT > 0 && this._emoteT !== Infinity) {
+      this._emoteT -= dt;
+      if (this._emoteT <= 0) this._emoteT = 0;
+    }
+    if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
+    if (this.dying) {
+      this.dying.t -= dt;
+      if (this.dying.t <= 0) return true;
+    }
+    return false;
   }
 
   setAction(key, fade = 0.25) {
@@ -140,6 +156,7 @@ export class Character {
 
   // Returns true once a death animation has fully finished.
   update(dt) {
+    if (this.lightweight) return this._liteUpdate(dt);
     if (this._emoteT > 0 && this._emoteT !== Infinity) {
       this._emoteT -= dt;
       if (this._emoteT <= 0) { this._emoteT = 0; this.setAction('idle'); }

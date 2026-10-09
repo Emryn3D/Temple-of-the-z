@@ -7,6 +7,21 @@ import { loadBaseModels, Character } from './characters.js';
 import { NowShift, DayNight } from './timefx.js';
 import { CameraShake, Haptics, SandParticles, DustPuffs } from './fx.js';
 import { GameAudio } from './audio.js';
+import { random, setSeed, reseed, getSeed } from './rng.js';
+import { createGameApi } from './agent.js';
+import { FIXED_DT } from './manifest.js';
+
+// URL flags. Absent (the human default) leaves the realtime loop and Math.random stream alone.
+const params = new URLSearchParams(location.search);
+function flagOn(name) {
+  if (!params.has(name)) return false;
+  const v = (params.get(name) || '').toLowerCase();
+  return v === '' || v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+const agentMode = flagOn('agent');
+const headless = flagOn('headless');
+const autoBot = flagOn('bot');
+if (params.has('seed')) setSeed(params.get('seed'));
 
 // ---------- DOM ----------
 const hud = document.getElementById('hud');
@@ -22,11 +37,23 @@ let levelIndex = 0, score = 0, lives = 3, timeLeft = 120, spawned = 0, active = 
 let knowledgeCount = 0, coinCount = 0;
 let state = 'loading';
 let yaw = 0;
+let outcome = null;
+let levelsCleared = 0;
+let tick = 0;
+let loadError = null;
+let drive = (agentMode || headless) ? 'step' : 'realtime';
+const events = [];
+function pushEvent(type, data = {}) {
+  events.push({ tick, type, ...data });
+  if (events.length > 64) events.shift();
+}
+let resolveReady = () => {};
+const ready = new Promise(resolve => { resolveReady = resolve; });
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
+const renderer = new THREE.WebGLRenderer({ antialias: !headless });
+renderer.setSize(headless ? 16 : innerWidth, headless ? 16 : innerHeight);
+renderer.shadowMap.enabled = !headless;
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1000);
@@ -35,7 +62,7 @@ const hemi = new THREE.HemisphereLight(0xffffff, 0x8b6d45, 0.55);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1);
 sun.position.set(50, 60, 20);
-sun.castShadow = true;
+sun.castShadow = !headless;
 sun.shadow.camera.left = sun.shadow.camera.bottom = -45;
 sun.shadow.camera.right = sun.shadow.camera.top = 45;
 sun.shadow.camera.far = 300;
@@ -53,10 +80,14 @@ scene.add(portal);
 const muzzle = new THREE.PointLight(0xffe27a, 0, 7);
 scene.add(muzzle);
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.7, 0.9);
-composer.addPass(bloomPass);
+let composer = null;
+let bloomPass = null;
+if (!headless) {
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.7, 0.9);
+  composer.addPass(bloomPass);
+}
 
 // ---------- systems ----------
 const nowShift = new NowShift();
@@ -76,7 +107,8 @@ const enemies = [], coins = [], knowledge = [], projectiles = [];
 class Enemy {
   constructor(pos) {
     this.ch = new Character(models.xbot, {
-      tint: 0x0a0a0a, emissive: 0x2a1640, opacity: 0.85, sneakAdditive: true
+      tint: 0x0a0a0a, emissive: 0x2a1640, opacity: 0.85, sneakAdditive: true,
+      lightweight: headless
     });
     this.ch.group.position.set(pos.x, 0, pos.z);
     scene.add(this.ch.group);
@@ -106,6 +138,7 @@ class Enemy {
 
 function clearMeshArr(arr) { while (arr.length) scene.remove(arr.pop()); }
 function clearEnemies() { while (enemies.length) enemies.pop().remove(); }
+function dist2D(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }
 
 function buildWorld() {
   while (world.children.length) world.remove(world.children[0]);
@@ -148,21 +181,21 @@ function spawnCollectibles() {
   for (let i = 0; i < 18; i++) {
     const c = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 12, 24), new THREE.MeshStandardMaterial({ color: 0xf0c247, emissive: 0x443300 }));
     c.rotation.x = Math.PI / 2;
-    c.position.set(Math.random() * 110 - 55, 0.6, -(12 + i * 5));
+    c.position.set(random() * 110 - 55, 0.6, -(12 + i * 5));
     c.castShadow = true;
     coins.push(c);
     scene.add(c);
   }
   for (let i = 0; i < 12; i++) {
     const k = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), new THREE.MeshBasicMaterial({ color: 0xa285ff }));
-    k.position.set(Math.random() * 115 - 57, 0.5, -(10 + i * 8));
+    k.position.set(random() * 115 - 57, 0.5, -(10 + i * 8));
     knowledge.push(k);
     scene.add(k);
   }
 }
 
 function spawnEnemy() {
-  const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 20;
+  const a = random() * Math.PI * 2, d = 20 + random() * 20;
   const p = new THREE.Vector3(hero.group.position.x + Math.cos(a) * d, 0, hero.group.position.z + Math.sin(a) * d);
   enemies.push(new Enemy(p));
   spawned++;
@@ -174,7 +207,8 @@ function spawnNpc() {
   npcSpec = LEVELS[levelIndex].npc;
   if (!npcSpec) return;
   npc = new Character(models[npcSpec.model], {
-    tint: npcSpec.tint, emissive: npcSpec.emissive, label: npcSpec.name
+    tint: npcSpec.tint, emissive: npcSpec.emissive, label: npcSpec.name,
+    lightweight: headless
   });
   npc.group.position.set(...npcSpec.pos);
   scene.add(npc.group);
@@ -187,7 +221,8 @@ function spawnBoss() {
   bossSpec = LEVELS[levelIndex].boss;
   boss = new Character(models[bossSpec.model], {
     tint: bossSpec.tint, emissive: bossSpec.emissive, metalness: bossSpec.metalness,
-    roughness: bossSpec.roughness, scale: bossSpec.scale, label: bossSpec.name
+    roughness: bossSpec.roughness, scale: bossSpec.scale, label: bossSpec.name,
+    lightweight: headless
   });
   boss.group.position.set(...bossSpec.pos);
   scene.add(boss.group);
@@ -203,7 +238,8 @@ function spawnZ() {
   const spec = LEVELS[levelIndex].zFigure;
   if (!spec || zFigure) return;
   zFigure = new Character(models[spec.model], {
-    tint: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9, label: spec.name
+    tint: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9, label: spec.name,
+    lightweight: headless
   });
   zFigure.group.position.set(portal.position.x, 0, portal.position.z + 1.2);
   scene.add(zFigure.group);
@@ -230,6 +266,7 @@ function fire() {
 function tryShift() {
   if (state !== 'run') return;
   if (nowShift.tryActivate()) {
+    pushEvent('now_shift', {});
     audio.setShift(true);
     haptics.pulse(80, 0.4, 0.7);
   }
@@ -237,6 +274,23 @@ function tryShift() {
 
 // ---------- input ----------
 const keys = {};
+const intent = { forward: 0, strafe: 0, turn: 0 };
+let edgeFire = false;
+let edgeShift = false;
+function clearIntent() {
+  intent.forward = 0;
+  intent.strafe = 0;
+  intent.turn = 0;
+  edgeFire = false;
+  edgeShift = false;
+}
+function setIntent(patch) {
+  if (patch.forward !== undefined) intent.forward = patch.forward;
+  if (patch.strafe !== undefined) intent.strafe = patch.strafe;
+  if (patch.turn !== undefined) intent.turn = patch.turn;
+  if (patch.fire) edgeFire = true;
+  if (patch.shift) edgeShift = true;
+}
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyZ') fire();
@@ -264,6 +318,8 @@ function showSubtitle(text, seconds = 4) {
 // ---------- level flow ----------
 function setLevel(i) {
   levelIndex = i;
+  reseed(i);
+  clearIntent();
   const L = LEVELS[i];
   timeLeft = L.time;
   spawned = 0;
@@ -286,11 +342,18 @@ function setLevel(i) {
 
 function completeLevel() {
   if (levelIndex < LEVELS.length - 1) {
+    const cleared = levelIndex;
+    outcome = 'cleared';
+    levelsCleared = cleared + 1;
+    pushEvent('level_cleared', { level: cleared });
     state = 'menu';
     setLevel(levelIndex + 1);
     overlay.style.display = 'flex';
     btnPlay.textContent = 'Next Level';
   } else {
+    outcome = 'won';
+    levelsCleared = LEVELS.length;
+    pushEvent('game_won', { level: levelIndex });
     state = 'win';
     ovTitle.textContent = 'Legend Complete';
     ovText.textContent = 'You crossed Now and entered the Temple of Z.';
@@ -299,6 +362,8 @@ function completeLevel() {
 }
 
 function failLevel() {
+  outcome = 'failed';
+  pushEvent('level_failed', { level: levelIndex });
   state = 'menu';
   ovTitle.textContent = 'You fell out of Now';
   ovText.textContent = 'The Now reshapes itself. Try this passage again.';
@@ -308,24 +373,42 @@ function failLevel() {
   setLevel(levelIndex);
 }
 
-btnPlay.onclick = () => {
-  if (state === 'loading') return;
+function startGame() {
+  if (state === 'loading') return { ok: false, error: 'loading' };
   audio.init(camera);
   audio.attachPortalHum(portal);
-  if (state === 'win') { score = 0; lives = 3; setLevel(0); btnPlay.textContent = 'Start Story'; state = 'menu'; return; }
+  if (state === 'win') {
+    score = 0; lives = 3; outcome = null; levelsCleared = 0;
+    setLevel(0);
+    btnPlay.textContent = 'Start Story';
+    state = 'menu';
+    return { ok: true, action: 'start', status: state };
+  }
+  outcome = null;
   state = 'run';
   overlay.style.display = 'none';
-};
-document.getElementById('btnRestart').onclick = () => {
-  if (state === 'loading') return;
+  return { ok: true, action: 'start', status: state };
+}
+
+function restartGame() {
+  if (state === 'loading') return { ok: false, error: 'loading' };
   score = 0; lives = 3;
+  outcome = null;
+  levelsCleared = 0;
   setLevel(0);
   state = 'menu';
   btnPlay.textContent = 'Start Story';
   overlay.style.display = 'flex';
-};
-document.getElementById('btnPause').onclick = () => { if (state === 'run') state = 'pause'; };
-document.getElementById('btnResume').onclick = () => { if (state === 'pause') state = 'run'; };
+  return { ok: true, action: 'restart', status: state };
+}
+
+function pauseGame() { if (state === 'run') state = 'pause'; return { ok: true, status: state }; }
+function resumeGame() { if (state === 'pause') state = 'run'; return { ok: true, status: state }; }
+
+btnPlay.onclick = () => { startGame(); };
+document.getElementById('btnRestart').onclick = () => { restartGame(); };
+document.getElementById('btnPause').onclick = () => { pauseGame(); };
+document.getElementById('btnResume').onclick = () => { resumeGame(); };
 
 // ---------- boot ----------
 ovTitle.textContent = 'Temple of Z';
@@ -333,14 +416,19 @@ ovText.textContent = 'Awakening the Now…';
 btnPlay.disabled = true;
 loadBaseModels().then(m => {
   models = m;
-  hero = new Character(models.soldier, { tint: 0xfff2e2, emissive: 0x33240f, emissiveIntensity: 0.4 });
+  hero = new Character(models.soldier, {
+    tint: 0xfff2e2, emissive: 0x33240f, emissiveIntensity: 0.4, lightweight: headless
+  });
   scene.add(hero.group);
   setLevel(0);
   btnPlay.disabled = false;
   btnPlay.textContent = 'Start Story';
   state = 'menu';
+  resolveReady();
 }).catch(err => {
+  loadError = err.message;
   ovText.textContent = 'Failed to load characters: ' + err.message;
+  resolveReady();
 });
 
 // ---------- main loop ----------
@@ -348,9 +436,22 @@ let last = performance.now();
 let stepTimer = 0;
 let npcEmoteCooldown = 0;
 
-function loop(t) {
-  const dtRaw = Math.min(0.033, (t - last) / 1000);
-  last = t;
+function renderScene() {
+  const w = headless ? 16 : innerWidth;
+  const h = headless ? 16 : innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  if (composer) {
+    composer.setSize(w, h);
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
+}
+
+function frame(dtRaw, doPaint = true) {
+  tick++;
 
   const shiftEnded = nowShift.update(dtRaw);
   if (shiftEnded) audio.setShift(false);
@@ -361,10 +462,13 @@ function loop(t) {
   if (gp.fire && !gpPrev.fire) fire();
   if (gp.shift && !gpPrev.shift) tryShift();
   gpPrev = gp;
+  if (edgeFire) { edgeFire = false; fire(); }
+  if (edgeShift) { edgeShift = false; tryShift(); }
 
   if (keys.ArrowLeft || keys.KeyQ) yaw += 2.4 * playerDt;
   if (keys.ArrowRight || keys.KeyE) yaw -= 2.4 * playerDt;
   if (gp.connected) yaw -= gp.x * 2.4 * playerDt;
+  if (intent.turn) yaw += 2.4 * intent.turn * playerDt;
   const forward = new THREE.Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
   const right = new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0, 1, 0));
 
@@ -381,6 +485,10 @@ function loop(t) {
     if (keys.KeyA) move.add(right.clone().multiplyScalar(-1));
     if (keys.KeyD) move.add(right);
     if (gp.connected && gp.y) move.add(forward.clone().multiplyScalar(-gp.y));
+    if (intent.forward > 0) move.add(forward);
+    else if (intent.forward < 0) move.add(forward.clone().multiplyScalar(-1));
+    if (intent.strafe < 0) move.add(right.clone().multiplyScalar(-1));
+    else if (intent.strafe > 0) move.add(right);
     let speed = 0;
     if (move.length()) {
       move.normalize();
@@ -405,13 +513,13 @@ function loop(t) {
       if (stepTimer <= 0) {
         stepTimer = 0.32;
         audio.step();
-        dust.spawn(hero.group.position);
+        if (!headless) dust.spawn(hero.group.position);
       }
     } else stepTimer = 0;
 
     // --- enemies ---
     if (spawned < L.enemyTarget && enemies.filter(e => !e.dead).length < 10) {
-      if (Math.random() < worldDt * 1.4) spawnEnemy();
+      if (random() < worldDt * 1.4) spawnEnemy();
     }
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
@@ -420,12 +528,15 @@ function loop(t) {
       if (e.dead) continue;
       let killed = false;
       for (let j = projectiles.length - 1; j >= 0; j--) {
-        if (e.ch.group.position.distanceTo(projectiles[j].position) < 1.2) {
+        // The bolt is held at chest height (y=1.2) while a chaser's origin is on
+        // the ground, so a 3D radius of 1.2 can never connect. Test the ground plane.
+        if (dist2D(e.ch.group.position, projectiles[j].position) < 1.2) {
           e.kill();
           active--;
           scene.remove(projectiles[j]);
           projectiles.splice(j, 1);
           score += 50;
+          pushEvent('enemy_down', { by: 'shot', score });
           shake.add(0.15);
           haptics.pulse(60, 0.5, 0.4);
           audio.thud(0.4);
@@ -436,6 +547,7 @@ function loop(t) {
       if (killed) continue;
       if (e.ch.group.position.distanceTo(hero.group.position) < 1.2) {
         lives--;
+        pushEvent('hurt', { lives });
         e.kill();
         active--;
         hero.flashHit();
@@ -460,6 +572,7 @@ function loop(t) {
       c.rotation.z += worldDt * 2;
       if (c.visible && hero.group.position.distanceTo(c.position) < 1) {
         c.visible = false; coinCount++; score += 10;
+        pushEvent('coin', { count: coinCount, score });
         audio.coin(); haptics.pulse(25, 0.1, 0.3);
       }
     }
@@ -467,6 +580,7 @@ function loop(t) {
       k.rotation.y += worldDt * 2.5;
       if (k.visible && hero.group.position.distanceTo(k.position) < 1) {
         k.visible = false; knowledgeCount++; score += 25;
+        pushEvent('wisdom', { count: knowledgeCount, score });
         audio.crystal(); haptics.pulse(35, 0.15, 0.4);
       }
     }
@@ -515,6 +629,7 @@ function loop(t) {
               scene.remove(projectiles[j]);
               projectiles.splice(j, 1);
               boss.hp--;
+              pushEvent('boss_hit', { hp: boss.hp });
               boss.flashHit();
               shake.add(0.2);
               audio.thud(0.7);
@@ -522,6 +637,7 @@ function loop(t) {
               if (boss.hp <= 0) {
                 boss.startFall();
                 score += 250;
+                pushEvent('boss_down', { score });
                 shake.add(0.6);
                 haptics.pulse(350, 1, 1);
               }
@@ -530,6 +646,7 @@ function loop(t) {
           }
           if (boss.group.position.distanceTo(hero.group.position) < 2.0) {
             lives--;
+            pushEvent('hurt', { lives, by: 'boss' });
             hero.flashHit();
             const back = hero.group.position.clone().sub(boss.group.position).setY(0).normalize().multiplyScalar(4);
             hero.group.position.add(back);
@@ -548,7 +665,9 @@ function loop(t) {
       if (portal.visible) {
         portal.rotation.z += worldDt * 2;
         if (zFigure) { zFigure.lookHead(hero.group.position.clone().setY(1.6)); zFigure.update(worldDt); }
-        if (hero.group.position.distanceTo(portal.position) < 1.7) completeLevel();
+        // The ring is drawn above the ground. Measure the walk on the ground plane,
+        // or a hero standing in the ring can never be close enough in 3D.
+        if (dist2D(hero.group.position, portal.position) < 1.7) completeLevel();
       }
     } else {
       if ((L.coinGoal === 0 || coinCount >= L.coinGoal) && (L.wisdomGoal === 0 || knowledgeCount >= L.wisdomGoal) && spawned >= L.enemyTarget && aliveEnemies === 0) completeLevel();
@@ -557,8 +676,10 @@ function loop(t) {
     // --- 4D systems ---
     const progress = 1 - timeLeft / L.time;
     dayNight.update(progress, nowShift.active, hero.group.position);
-    sand.update(worldDt, hero.group.position, L.windSpeed, L.sandOpacity * (1 + dayNight.stars.material.opacity));
-    dust.update(worldDt);
+    if (!headless) {
+      sand.update(worldDt, hero.group.position, L.windSpeed, L.sandOpacity * (1 + dayNight.stars.material.opacity));
+      dust.update(worldDt);
+    }
   } else if (hero) {
     hero.setLocomotion(0);
     hero.update(dtRaw);
@@ -588,11 +709,131 @@ function loop(t) {
   powerbar.style.width = (nowShift.meter * 100).toFixed(0) + '%';
   powerbar.style.background = nowShift.active ? '#8ad0ff' : (nowShift.meter >= 1 ? '#f4d444' : '#777');
 
-  renderer.setSize(innerWidth, innerHeight, false);
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  composer.setSize(innerWidth, innerHeight);
-  composer.render();
+  if (doPaint) renderScene();
+}
+
+function loop(t) {
+  if (drive === 'realtime') {
+    const dtRaw = Math.min(0.033, (t - last) / 1000);
+    last = t;
+    frame(dtRaw, true);
+  }
+  // Step mode paints from step(), not from this clock. Re-rendering the bloom
+  // pass on every refresh while the sim is idle pegs the CPU and stalls the page.
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+
+let loopStarted = false;
+function ensureLoop() {
+  if (loopStarted) return;
+  loopStarted = true;
+  requestAnimationFrame(loop);
+}
+if (!headless) ensureLoop();
+
+function stepFrames(n = 1) {
+  let count = Math.floor(Number(n));
+  if (!Number.isFinite(count)) count = 1;
+  count = Math.max(0, Math.min(5000, count));
+  if (drive !== 'step') {
+    drive = 'step';
+    last = performance.now();
+  }
+  for (let i = 0; i < count; i++) frame(FIXED_DT, false);
+  if (!headless) renderScene();
+}
+
+function applySeed(seed, opts) {
+  if (seed == null || seed === '') return { ok: false, error: 'seed required' };
+  setSeed(seed);
+  if (opts && opts.restart) return { ...restartGame(), seed: getSeed() };
+  return { ok: true, seed: getSeed(), status: state };
+}
+
+function setDrive(mode) {
+  if (mode !== 'realtime' && mode !== 'step') return { ok: false, error: 'drive must be realtime or step' };
+  drive = mode;
+  last = performance.now();
+  if (mode === 'realtime') ensureLoop();
+  return { ok: true, drive };
+}
+
+function sample() {
+  const L = LEVELS[levelIndex];
+  const px = hero ? hero.group.position.x : 0;
+  const pz = hero ? hero.group.position.z : 0;
+  return {
+    status: state,
+    loadError,
+    levelIndex,
+    levelCount: LEVELS.length,
+    levelName: L.name,
+    levelStory: L.story,
+    terrain: L.terrain,
+    score, lives, timeLeft, yaw,
+    player: { x: px, z: pz },
+    coins: coins.filter(c => c.visible).map(c => ({ x: c.position.x, z: c.position.z })),
+    knowledge: knowledge.filter(k => k.visible).map(k => ({ x: k.position.x, z: k.position.z })),
+    enemies: enemies.filter(e => !e.dead).map(e => ({ x: e.ch.group.position.x, z: e.ch.group.position.z })),
+    portal: { x: portal.position.x, z: portal.position.z, open: portal.visible },
+    npc: npc ? { name: npcSpec?.name || 'NPC', x: npc.group.position.x, z: npc.group.position.z } : null,
+    boss: boss ? {
+      name: bossSpec?.name || 'Guardian',
+      x: boss.group.position.x,
+      z: boss.group.position.z,
+      hp: boss.hp,
+      maxHp: bossSpec?.hp ?? boss.hp,
+      dying: !!boss.dying
+    } : null,
+    shift: { active: nowShift.active, meter: nowShift.meter, cooldown: nowShift.cd },
+    subtitle: subtitleT > 0 ? subtitle.textContent : '',
+    outcome,
+    levelsCleared,
+    seed: getSeed(),
+    tick,
+    drive,
+    spawned,
+    coinCount,
+    knowledgeCount,
+    enemyTarget: L.enemyTarget,
+    coinGoal: L.coinGoal,
+    wisdomGoal: L.wisdomGoal
+  };
+}
+
+if (agentMode && !headless) {
+  const hint = document.getElementById('hint');
+  if (hint) hint.textContent = 'Agent step mode — window.game.step(n) advances time';
+}
+
+window.game = createGameApi({
+  ready,
+  sample,
+  drainEvents() { return events.splice(0, events.length); },
+  setIntent,
+  start: startGame,
+  restart: restartGame,
+  pause: pauseGame,
+  resume: resumeGame,
+  stepFrames,
+  setSeed: applySeed,
+  getSeed,
+  setDrive,
+  getDrive() { return drive; }
+});
+
+if (autoBot) {
+  ready.then(async () => {
+    try {
+      const { runBot } = await import('./bot.js');
+      const levels = Number(params.get('levels') || 1);
+      const maxTicks = Number(params.get('maxTicks') || (levels > 1 ? 16000 : 7000));
+      const result = await runBot(window.game, { levels, maxTicks, yieldFrame: !headless });
+      window.game.lastBotResult = result;
+      console.log('BOT_RESULT ' + JSON.stringify(result));
+    } catch (err) {
+      console.error('BOT_ERROR', err);
+      window.game.lastBotResult = { ok: false, reason: String(err && err.message || err) };
+    }
+  });
+}

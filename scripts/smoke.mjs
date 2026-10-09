@@ -29,7 +29,11 @@ const targets = [
   '../js/characters.js',
   '../js/timefx.js',
   '../js/fx.js',
-  '../js/audio.js'
+  '../js/audio.js',
+  '../js/rng.js',
+  '../js/manifest.js',
+  '../js/agent.js',
+  '../js/bot.js'
 ];
 
 let failed = 0;

@@ -26,17 +26,23 @@ export async function loadBaseModels(path = './assets/models/') {
 
 export function makeLabel(text) {
   const canvas = document.createElement('canvas');
-  canvas.width = 256; canvas.height = 64;
+  canvas.width = 512; canvas.height = 64;
   const g = canvas.getContext('2d');
   g.fillStyle = 'rgba(10,10,14,0.55)';
-  g.beginPath(); g.roundRect(4, 8, 248, 48, 12); g.fill();
-  g.font = '700 26px system-ui, sans-serif';
+  g.beginPath(); g.roundRect(4, 8, 504, 48, 12); g.fill();
+  let size = 28;
+  g.font = `700 ${size}px system-ui, sans-serif`;
+  while (size > 16 && g.measureText(text).width > 470) {
+    size -= 2;
+    g.font = `700 ${size}px system-ui, sans-serif`;
+  }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillStyle = '#f4d444';
-  g.fillText(text, 128, 33);
+  g.fillText(text, 256, 33);
   const tex = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  sprite.scale.set(2.2, 0.55, 1);
+  const width = Math.min(4.4, 1.5 + text.length * 0.18);
+  sprite.scale.set(width, 0.55, 1);
   return sprite;
 }
 

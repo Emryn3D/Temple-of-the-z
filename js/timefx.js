@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
-// "Now-shift" — the player's time power. While active the world runs at 1/4
-// speed but the player keeps ~90% speed; the level clock keeps draining at
-// world rate, so stretching the Now spends it.
+// Plus Energy — the site's name for the time power (also called Now-shift).
+// An energy from within that cannot be bought. While active the world runs at
+// 1/4 speed but the player keeps ~90% speed; the level clock keeps draining at
+// world rate. The Alien can consume it. Jeffery Bear hastens the recharge.
 export class NowShift {
   constructor() {
     this.duration = 2.0;
@@ -26,6 +27,21 @@ export class NowShift {
       this.cd = Math.max(0, this.cd - dt);
     }
     return false;
+  }
+  // The Alien feeds on Plus Energy: an active shift ends, and recharge stalls.
+  consume(dt) {
+    if (this.active) {
+      this.active = false;
+      this.t = 0;
+      this.cd = this.cooldown;
+      return true;
+    }
+    if (this.cd < this.cooldown) this.cd = Math.min(this.cooldown, this.cd + dt);
+    return false;
+  }
+  // Jeffery Bear elevates vibrations: the cooldown falls faster while you stay near.
+  hasten(dt) {
+    if (!this.active && this.cd > 0) this.cd = Math.max(0, this.cd - dt);
   }
   get meter() { return this.active ? this.t / this.duration : 1 - this.cd / this.cooldown; }
   get worldScale() { return this.active ? 0.25 : 1; }

@@ -3,7 +3,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { LEVELS } from './levels.js';
-import { loadBaseModels, Character } from './characters.js';
+import { loadBaseModels } from './characters.js';
+import { Mascot, makeActor, makeToken } from './mascots.js';
 import { NowShift, DayNight } from './timefx.js';
 import { CameraShake, Haptics, SandParticles, DustPuffs } from './fx.js';
 import { GameAudio } from './audio.js';
@@ -100,15 +101,18 @@ const audio = new GameAudio();
 
 // ---------- cast ----------
 let models = null;
-let hero = null, npc = null, npcSpec = null, boss = null, bossSpec = null, zFigure = null;
+let hero = null, boss = null, bossSpec = null, zFigure = null;
 let heroYawVisual = 0;
-const enemies = [], coins = [], knowledge = [], projectiles = [];
+let motion = 0;
+let activeAura = null;
+const enemies = [], coins = [], knowledge = [], glitter = [], projectiles = [];
+const cast = [];
 
 class Enemy {
   constructor(pos) {
-    this.ch = new Character(models.xbot, {
-      tint: 0x0a0a0a, emissive: 0x2a1640, opacity: 0.85, sneakAdditive: true,
-      lightweight: headless
+    // A Z: the gravitational fear from the legend. Dark gold, not a person.
+    this.ch = new Mascot('z', {
+      tint: 0xf0c247, emissive: 0x6a4a08, scale: 1.05, lightweight: headless
     });
     this.ch.group.position.set(pos.x, 0, pos.z);
     scene.add(this.ch.group);
@@ -123,7 +127,9 @@ class Enemy {
       const desired = to.multiplyScalar(6.2);
       this.v.add(desired.sub(this.v).clampLength(0, 10 * dt));
       this.ch.group.position.add(this.v.clone().multiplyScalar(dt));
-      this.ch.group.lookAt(hero.group.position.x, 0, hero.group.position.z);
+      const zx = hero.group.position.x - this.ch.group.position.x;
+      const zz = hero.group.position.z - this.ch.group.position.z;
+      this.ch.group.rotation.y = Math.atan2(zx, zz);
       this.ch.setLocomotion(this.v.length());
       this.ch.lookHead(hero.group.position.clone().setY(1.6));
     }
@@ -176,21 +182,30 @@ function buildWorld() {
 function spawnCollectibles() {
   clearMeshArr(coins);
   clearMeshArr(knowledge);
+  clearMeshArr(glitter);
   coinCount = 0;
   knowledgeCount = 0;
   for (let i = 0; i < 18; i++) {
-    const c = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 12, 24), new THREE.MeshStandardMaterial({ color: 0xf0c247, emissive: 0x443300 }));
-    c.rotation.x = Math.PI / 2;
-    c.position.set(random() * 110 - 55, 0.6, -(12 + i * 5));
-    c.castShadow = true;
+    const c = makeToken('coin');
+    c.position.x = random() * 110 - 55;
+    c.position.z = -(12 + i * 5);
     coins.push(c);
     scene.add(c);
   }
   for (let i = 0; i < 12; i++) {
-    const k = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), new THREE.MeshBasicMaterial({ color: 0xa285ff }));
-    k.position.set(random() * 115 - 57, 0.5, -(10 + i * 8));
+    const k = makeToken('passion');
+    k.position.x = random() * 115 - 57;
+    k.position.z = -(10 + i * 8);
     knowledge.push(k);
     scene.add(k);
+  }
+  // What glitters is the spend. It is not a coin, and taking it leaves you with less.
+  for (let i = 0; i < 6; i++) {
+    const g = makeToken('glitter');
+    g.position.x = random() * 80 - 40;
+    g.position.z = -(16 + i * 14);
+    glitter.push(g);
+    scene.add(g);
   }
 }
 
@@ -202,28 +217,34 @@ function spawnEnemy() {
   active++;
 }
 
-function spawnNpc() {
-  if (npc) { scene.remove(npc.group); npc = null; }
-  npcSpec = LEVELS[levelIndex].npc;
-  if (!npcSpec) return;
-  npc = new Character(models[npcSpec.model], {
-    tint: npcSpec.tint, emissive: npcSpec.emissive, label: npcSpec.name,
-    lightweight: headless
-  });
-  npc.group.position.set(...npcSpec.pos);
-  scene.add(npc.group);
-  npc._lineIdx = 0;
-  npc._near = false;
-  npc._lineTimer = 0;
+function clearCast() {
+  while (cast.length) scene.remove(cast.pop().actor.group);
+}
+
+function spawnCast() {
+  clearCast();
+  const list = LEVELS[levelIndex].cast || [];
+  for (const spec of list) {
+    const actor = makeActor(spec, models, headless);
+    actor.group.position.set(spec.pos[0], spec.pos[1] || 0, spec.pos[2]);
+    scene.add(actor.group);
+    cast.push({ spec, actor, lineIdx: 0, near: false, lineTimer: 0 });
+  }
+}
+
+function nearCast(role) {
+  if (!hero) return null;
+  for (const c of cast) {
+    if (c.spec.role !== role) continue;
+    const radius = c.spec.radius || 4;
+    if (dist2D(c.actor.group.position, hero.group.position) < radius) return c;
+  }
+  return null;
 }
 
 function spawnBoss() {
   bossSpec = LEVELS[levelIndex].boss;
-  boss = new Character(models[bossSpec.model], {
-    tint: bossSpec.tint, emissive: bossSpec.emissive, metalness: bossSpec.metalness,
-    roughness: bossSpec.roughness, scale: bossSpec.scale, label: bossSpec.name,
-    lightweight: headless
-  });
+  boss = makeActor(bossSpec, models, headless);
   boss.group.position.set(...bossSpec.pos);
   scene.add(boss.group);
   boss.hp = bossSpec.hp;
@@ -235,16 +256,12 @@ function spawnBoss() {
 }
 
 function spawnZ() {
-  const spec = LEVELS[levelIndex].zFigure;
+  const spec = LEVELS[levelIndex].finale;
   if (!spec || zFigure) return;
-  zFigure = new Character(models[spec.model], {
-    tint: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9, label: spec.name,
-    lightweight: headless
-  });
-  zFigure.group.position.set(portal.position.x, 0, portal.position.z + 1.2);
+  zFigure = makeActor(spec, models, headless);
+  zFigure.group.position.set(portal.position.x, 0, portal.position.z + 1.6);
   scene.add(zFigure.group);
-  zFigure.playEmote('agree', true);
-  showSubtitle('Z: You stretched the Now and did not break. Come through.', 6);
+  showSubtitle(spec.line, 6);
 }
 
 function fire() {
@@ -267,6 +284,7 @@ function tryShift() {
   if (state !== 'run') return;
   if (nowShift.tryActivate()) {
     pushEvent('now_shift', {});
+    showSubtitle('Plus Energy. It cannot be bought. It comes from within.', 2.4);
     audio.setShift(true);
     haptics.pulse(80, 0.4, 0.7);
   }
@@ -327,6 +345,8 @@ function setLevel(i) {
   hero.group.position.set(0, 0, 0);
   yaw = 0;
   heroYawVisual = Math.PI;
+  motion = 0;
+  activeAura = null;
   portal.visible = false;
   clearEnemies();
   clearMeshArr(projectiles);
@@ -334,7 +354,7 @@ function setLevel(i) {
   if (zFigure) { scene.remove(zFigure.group); zFigure = null; }
   buildWorld();
   spawnCollectibles();
-  spawnNpc();
+  spawnCast();
   dayNight.setLevel(L);
   ovTitle.textContent = L.name;
   ovText.textContent = L.story;
@@ -356,7 +376,7 @@ function completeLevel() {
     pushEvent('game_won', { level: levelIndex });
     state = 'win';
     ovTitle.textContent = 'Legend Complete';
-    ovText.textContent = 'You crossed Now and entered the Temple of Z.';
+    ovText.textContent = 'You held what mattered, threw the Z away, and kept the energy that cannot be bought. The story is yours. Go beyond yourself.';
     overlay.style.display = 'flex';
   }
 }
@@ -365,8 +385,8 @@ function failLevel() {
   outcome = 'failed';
   pushEvent('level_failed', { level: levelIndex });
   state = 'menu';
-  ovTitle.textContent = 'You fell out of Now';
-  ovText.textContent = 'The Now reshapes itself. Try this passage again.';
+  ovTitle.textContent = 'A fear pulled you down';
+  ovText.textContent = 'The Zs will still be there. Throw them away and walk it again. It is still your movie.';
   overlay.style.display = 'flex';
   btnPlay.textContent = 'Retry Level';
   lives = 3;
@@ -411,13 +431,13 @@ document.getElementById('btnPause').onclick = () => { pauseGame(); };
 document.getElementById('btnResume').onclick = () => { resumeGame(); };
 
 // ---------- boot ----------
-ovTitle.textContent = 'Temple of Z';
-ovText.textContent = 'Awakening the Now…';
+ovTitle.textContent = 'The Legend of Now';
+ovText.textContent = 'You are the Stickman. Throw away the Zs.';
 btnPlay.disabled = true;
 loadBaseModels().then(m => {
   models = m;
-  hero = new Character(models.soldier, {
-    tint: 0xfff2e2, emissive: 0x33240f, emissiveIntensity: 0.4, lightweight: headless
+  hero = new Mascot('stickman', {
+    tint: 0xf4d444, emissive: 0x6a5208, label: 'Stickman', lightweight: headless
   });
   scene.add(hero.group);
   setLevel(0);
@@ -489,16 +509,39 @@ function frame(dtRaw, doPaint = true) {
     else if (intent.forward < 0) move.add(forward.clone().multiplyScalar(-1));
     if (intent.strafe < 0) move.add(right.clone().multiplyScalar(-1));
     else if (intent.strafe > 0) move.add(right);
+    // Stickman stays in motion. Balloon's vibration lifts. The Alien eats Plus Energy.
+    const lift = nearCast('lift');
+    const shelter = nearCast('shelter');
+    const bear = nearCast('vibrate');
+    const alien = nearCast('consume');
+    const tags = [];
+    if (lift) tags.push('Lift');
+    if (bear) { nowShift.hasten(playerDt); tags.push('Vibration'); }
+    if (shelter) tags.push('Shelter');
+    if (alien) {
+      if (nowShift.consume(playerDt)) {
+        audio.setShift(false);
+        pushEvent('consumed', {});
+        showSubtitle('The Alien consumes the force.', 2.2);
+      }
+      tags.push('Consumed');
+    }
+    activeAura = tags.length ? tags.join(' ') : null;
+
     let speed = 0;
     if (move.length()) {
       move.normalize();
-      speed = 8;
+      // An object in motion stays in motion: a small bonus while you keep walking.
+      motion = Math.min(1, motion + playerDt * 0.85);
+      speed = 8 * (1 + 0.18 * motion) * (lift ? 1.22 : 1);
       hero.group.position.add(move.clone().multiplyScalar(speed * playerDt));
       // Turn the hero toward the direction of travel (model faces +Z).
       const targetYaw = Math.atan2(move.x, move.z);
       let d = targetYaw - heroYawVisual;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       heroYawVisual += d * Math.min(1, 12 * playerDt);
+    } else {
+      motion = Math.max(0, motion - playerDt * 1.1);
     }
     hero.group.rotation.y = heroYawVisual;
     hero.setLocomotion(speed);
@@ -556,6 +599,20 @@ function frame(dtRaw, doPaint = true) {
         audio.thud(0.8);
       }
     }
+    // Zs are a gravitational fear. They tug. Anti-Social is a pocket where they cannot.
+    if (!shelter) {
+      const pull = new THREE.Vector3();
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const toZ = e.ch.group.position.clone().sub(hero.group.position);
+        toZ.y = 0;
+        const d = toZ.length();
+        const radius = 5.2;
+        if (d > 0.35 && d < radius) pull.add(toZ.multiplyScalar((2.2 * (1 - d / radius)) / d));
+      }
+      if (pull.length() > 2.2) pull.setLength(2.2);
+      hero.group.position.add(pull.multiplyScalar(worldDt));
+    }
     audio.updateWhispers(dtRaw, enemies.filter(e => !e.dead).map(e => e.ch.group), hero.group.position);
 
     // --- projectiles ---
@@ -569,36 +626,55 @@ function frame(dtRaw, doPaint = true) {
 
     // --- collectibles ---
     for (const c of coins) {
-      c.rotation.z += worldDt * 2;
-      if (c.visible && hero.group.position.distanceTo(c.position) < 1) {
+      if (c.material) c.material.rotation += worldDt * 0.8;
+      if (c.visible && hero.group.position.distanceTo(c.position) < 1.15) {
         c.visible = false; coinCount++; score += 10;
         pushEvent('coin', { count: coinCount, score });
         audio.coin(); haptics.pulse(25, 0.1, 0.3);
       }
     }
     for (const k of knowledge) {
-      k.rotation.y += worldDt * 2.5;
-      if (k.visible && hero.group.position.distanceTo(k.position) < 1) {
+      if (k.material) k.material.rotation += worldDt;
+      if (k.visible && hero.group.position.distanceTo(k.position) < 1.15) {
         k.visible = false; knowledgeCount++; score += 25;
         pushEvent('wisdom', { count: knowledgeCount, score });
         audio.crystal(); haptics.pulse(35, 0.15, 0.4);
       }
     }
-
-    // --- NPC dialogue ---
-    npcEmoteCooldown = Math.max(0, npcEmoteCooldown - dtRaw);
-    if (npc) {
-      npc.lookHead(hero.group.position.clone().setY(1.6));
-      npc.update(worldDt);
-      const near = npc.group.position.distanceTo(hero.group.position) < 3.5;
-      if (near && (!npc._near || npc._lineTimer <= 0)) {
-        showSubtitle(npcSpec.lines[npc._lineIdx % npcSpec.lines.length], 4.5);
-        npc._lineIdx++;
-        npc._lineTimer = 5;
-        if (npcSpec.emote && npcEmoteCooldown <= 0) { npc.playEmote(npcSpec.emote); npcEmoteCooldown = 6; }
+    for (const g of glitter) {
+      if (g.material) g.material.rotation += worldDt * 1.4;
+      if (g.visible && hero.group.position.distanceTo(g.position) < 1.15) {
+        g.visible = false;
+        score = Math.max(0, score - 15);
+        const spendingLand = LEVELS[levelIndex].coinGoal > 0 && coinCount > 0;
+        if (spendingLand) coinCount--;
+        pushEvent('glitter', { score, count: coinCount });
+        showSubtitle(spendingLand
+          ? 'You spent it. The more you spend, the less you have.'
+          : 'All that glitters is not gold. Break the distraction.', 2.4);
+        audio.thud(0.25);
       }
-      if (near) npc._lineTimer -= dtRaw;
-      npc._near = near;
+    }
+
+    // --- cast dialogue ---
+    npcEmoteCooldown = Math.max(0, npcEmoteCooldown - dtRaw);
+    for (const c of cast) {
+      const actor = c.actor;
+      const fx = hero.group.position.x - actor.group.position.x;
+      const fz = hero.group.position.z - actor.group.position.z;
+      actor.group.rotation.y = Math.atan2(fx, fz);
+      actor.lookHead(hero.group.position.clone().setY(1.6));
+      actor.update(worldDt);
+      if (!c.spec.lines) continue;
+      const near = dist2D(actor.group.position, hero.group.position) < (c.spec.talk || 3.5);
+      if (near && (!c.near || c.lineTimer <= 0)) {
+        showSubtitle(c.spec.lines[c.lineIdx % c.spec.lines.length], 4.5);
+        c.lineIdx++;
+        c.lineTimer = 5;
+        if (c.spec.emote && npcEmoteCooldown <= 0) { actor.playEmote(c.spec.emote); npcEmoteCooldown = 6; }
+      }
+      if (near) c.lineTimer -= dtRaw;
+      c.near = near;
     }
 
     // --- boss & portal (final level) ---
@@ -612,7 +688,7 @@ function frame(dtRaw, doPaint = true) {
           const dist = to.length();
           if (dist > 0.001) to.normalize();
           boss.group.position.add(to.multiplyScalar(bossSpec.speed * worldDt));
-          boss.group.lookAt(hero.group.position.x, 0, hero.group.position.z);
+          boss.group.rotation.y = Math.atan2(hero.group.position.x - boss.group.position.x, hero.group.position.z - boss.group.position.z);
           boss.setLocomotion(bossSpec.speed);
           boss.lookHead(hero.group.position.clone().setY(1.6));
           // Heavy footsteps: shake + thud, attenuated by distance.
@@ -643,6 +719,11 @@ function frame(dtRaw, doPaint = true) {
               }
               break;
             }
+          }
+          // The last Z pulls harder than the small ones. Shelter still cancels it.
+          if (!nearCast('shelter') && dist < 9 && dist > 0.4) {
+            const tug = 3.0 * (1 - dist / 9) * worldDt;
+            hero.group.position.add(to.clone().multiplyScalar(-tug));
           }
           if (boss.group.position.distanceTo(hero.group.position) < 2.0) {
             lives--;
@@ -703,8 +784,12 @@ function frame(dtRaw, doPaint = true) {
   // --- HUD ---
   const L = LEVELS[levelIndex];
   const aliveNow = enemies.filter(e => !e.dead).length;
-  let line = `${L.name} · Time ${Math.max(0, Math.floor(timeLeft / 60))}:${Math.max(0, Math.floor(timeLeft % 60)).toString().padStart(2, '0')} · Enemies ${Math.max(0, L.enemyTarget - spawned + aliveNow)} · Coins ${coinCount}/${L.coinGoal || '-'} · Wisdom ${knowledgeCount}/${L.wisdomGoal || '-'} · Score ${score} · Lives ${lives}`;
-  if (boss && !boss.dying) line += ` · Guardian ${'♥'.repeat(Math.max(0, boss.hp))}`;
+  const clock = `${Math.max(0, Math.floor(timeLeft / 60))}:${Math.max(0, Math.floor(timeLeft % 60)).toString().padStart(2, '0')}`;
+  let line = `${L.name} · Time ${clock} · Zs ${Math.max(0, L.enemyTarget - spawned + aliveNow)} · Score ${score} · Lives ${lives}`;
+  if (L.coinGoal) line += ` · Coins ${coinCount}/${L.coinGoal}`;
+  if (L.wisdomGoal) line += ` · Passion ${knowledgeCount}/${L.wisdomGoal}`;
+  if (boss && !boss.dying) line += ` · ${bossSpec.name} ${'♥'.repeat(Math.max(0, boss.hp))}`;
+  if (activeAura) line += ` · ${activeAura}`;
   hud.textContent = line;
   powerbar.style.width = (nowShift.meter * 100).toFixed(0) + '%';
   powerbar.style.background = nowShift.active ? '#8ad0ff' : (nowShift.meter >= 1 ? '#f4d444' : '#777');
@@ -774,9 +859,21 @@ function sample() {
     player: { x: px, z: pz },
     coins: coins.filter(c => c.visible).map(c => ({ x: c.position.x, z: c.position.z })),
     knowledge: knowledge.filter(k => k.visible).map(k => ({ x: k.position.x, z: k.position.z })),
-    enemies: enemies.filter(e => !e.dead).map(e => ({ x: e.ch.group.position.x, z: e.ch.group.position.z })),
+    glitter: glitter.filter(g => g.visible).map(g => ({ x: g.position.x, z: g.position.z })),
+    enemies: enemies.filter(e => !e.dead).map(e => ({ name: 'Z', x: e.ch.group.position.x, z: e.ch.group.position.z })),
     portal: { x: portal.position.x, z: portal.position.z, open: portal.visible },
-    npc: npc ? { name: npcSpec?.name || 'NPC', x: npc.group.position.x, z: npc.group.position.z } : null,
+    cast: cast.map(c => ({
+      name: c.spec.name,
+      role: c.spec.role,
+      x: c.actor.group.position.x,
+      z: c.actor.group.position.z
+    })),
+    npc: (() => {
+      const guide = cast.find(c => c.spec.role === 'guide') || cast[0];
+      return guide ? { name: guide.spec.name, x: guide.actor.group.position.x, z: guide.actor.group.position.z } : null;
+    })(),
+    motion,
+    aura: activeAura,
     boss: boss ? {
       name: bossSpec?.name || 'Guardian',
       x: boss.group.position.x,

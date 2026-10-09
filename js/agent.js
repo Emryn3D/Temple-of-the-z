@@ -42,11 +42,16 @@ export function createGameApi(host) {
 
     const pickups = [
       ...s.coins.map(c => pose(px, pz, yaw, c.x, c.z, { kind: 'coin' })),
-      ...s.knowledge.map(k => pose(px, pz, yaw, k.x, k.z, { kind: 'wisdom' }))
+      ...s.knowledge.map(k => pose(px, pz, yaw, k.x, k.z, { kind: 'wisdom' })),
+      ...(s.glitter || []).map(g => pose(px, pz, yaw, g.x, g.z, { kind: 'glitter' }))
     ].sort((a, b) => a.dist - b.dist);
 
     const enemies = s.enemies
-      .map(e => pose(px, pz, yaw, e.x, e.z, {}))
+      .map(e => pose(px, pz, yaw, e.x, e.z, { name: e.name || 'Z' }))
+      .sort((a, b) => a.dist - b.dist);
+
+    const cast = (s.cast || [])
+      .map(c => pose(px, pz, yaw, c.x, c.z, { name: c.name, role: c.role }))
       .sort((a, b) => a.dist - b.dist);
 
     return {
@@ -91,13 +96,16 @@ export function createGameApi(host) {
         x: r3(px),
         z: r3(pz),
         yaw: r4(yaw),
-        heading: { x: r3(Math.sin(yaw)), z: r3(-Math.cos(yaw)) }
+        heading: { x: r3(Math.sin(yaw)), z: r3(-Math.cos(yaw)) },
+        motion: r3(s.motion || 0)
       },
+      aura: s.aura || null,
       nearby: {
         enemies,
         pickups,
         portal: pose(px, pz, yaw, s.portal.x, s.portal.z, { open: s.portal.open }),
         npc: s.npc ? pose(px, pz, yaw, s.npc.x, s.npc.z, { name: s.npc.name }) : null,
+        cast,
         boss: s.boss ? pose(px, pz, yaw, s.boss.x, s.boss.z, {
           name: s.boss.name, hp: s.boss.hp, maxHp: s.boss.maxHp, dying: s.boss.dying
         }) : null
@@ -125,6 +133,8 @@ export function createGameApi(host) {
       case 'fire': host.setIntent({ fire: true }); return { ok: true, action: 'fire' };
       case 'now_shift':
       case 'now-shift':
+      case 'plus_energy':
+      case 'plus-energy':
       case 'shift': host.setIntent({ shift: true }); return { ok: true, action: 'now_shift' };
       default: return { ok: false, error: `unknown action "${name}"` };
     }
@@ -140,7 +150,7 @@ export function createGameApi(host) {
       }
     }
     if (input.fire) patch.fire = true;
-    if (input.shift || input.now_shift) patch.shift = true;
+    if (input.shift || input.now_shift || input.plus_energy) patch.shift = true;
     if (!Object.keys(patch).length) return { ok: false, error: 'move needs forward, strafe, turn, fire, or shift' };
     host.setIntent(patch);
     return { ok: true, action: 'move', intent: patch };

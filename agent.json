@@ -2,14 +2,14 @@
   "name": "temple-of-the-z",
   "title": "Legend of Now – Temple of Z",
   "version": "1",
-  "description": "Agent interface for the browser game Legend of Now – Temple of Z. Observe a compact world state, latch movement and combat actions, and advance a fixed timestep so a bot can play with no screen. Human keyboard, touch, and gamepad play is unchanged when agent and headless flags are off.",
+  "description": "Agent interface for the browser game Legend of Now – Temple of Z, aligned with the No Rest Group legend. The player is the Stickman. Fears are Zs. Plus Energy is the time power. Observe a compact world state, latch movement and combat actions, and advance a fixed timestep so a bot can play with no screen. Human keyboard, touch, and gamepad play is unchanged when agent and headless flags are off.",
   "tickHz": 30,
   "fixedDt": 0.03333333333333333,
   "browserGlobal": "window.game",
   "flags": {
     "agent": "Start in step mode. The simulation advances only via window.game.step(n). Rendering still runs so a person can watch.",
     "headless": "Step mode, plus skip drawing, shadows, bloom, and cosmetic particle updates. Character animation is reduced to gameplay timers. Use this for a bot with no screen.",
-    "seed": "Seed relic, wisdom, and chaser randomness. Example: ?seed=1. Replay requires step mode (frame timing in realtime mode changes the spawn rolls).",
+    "seed": "Seed coin, passion-mark, glitter, and Z-spawn randomness. Example: ?seed=1. Replay requires step mode (frame timing in realtime mode changes the spawn rolls).",
     "bot": "After load, run the built-in reference bot. Optional &levels=1 and &maxTicks=7000."
   },
   "methods": {
@@ -80,11 +80,15 @@
     },
     {
       "name": "fire",
-      "description": "Fire one bolt along the current heading on the next tick. One-shot; not latched. Bolts travel 16 units/s and hit a chaser within 1.2 units horizontally."
+      "description": "Throw one bolt along the current heading on the next tick. One-shot; not latched. Bolts travel 16 units/s and throw away a Z within 1.2 units horizontally."
     },
     {
       "name": "now_shift",
-      "description": "Spend the Now-shift if the meter is full. One-shot. For 2 seconds of real time the world (including the level clock and bolts) runs at 1/4 speed while the player keeps 90% speed. Then an 8 second cooldown."
+      "description": "Spend Plus Energy (the Now-shift) if the meter is full. One-shot. For 2 seconds of real time the world (including the level clock and bolts) runs at 1/4 speed while the Stickman keeps 90% speed. Then an 8 second cooldown. This is the energy from within; it cannot be bought. The Alien consumes it."
+    },
+    {
+      "name": "plus_energy",
+      "description": "Alias of now_shift. The No Rest name for the same power."
     },
     {
       "name": "move",
@@ -94,14 +98,14 @@
         "strafe": "number -1..1. Positive strafes right.",
         "turn": "number -1..1. Positive turns left at up to 2.4 rad/s.",
         "fire": "boolean. Fire once on the next tick.",
-        "shift": "boolean. Try Now-shift once on the next tick."
+        "shift": "boolean. Try Plus Energy (Now-shift) once on the next tick. plus_energy is accepted as the same flag."
       }
     }
   ],
   "tools": [
     {
       "name": "get_state",
-      "description": "Observe Legend of Now – Temple of Z. Returns level, objectives, score, lives, time left, player pose, and nearby chasers, pickups, portal, NPC, and boss with positions relative to the player. Reading state drains the event queue.",
+      "description": "Observe Legend of Now – Temple of Z. Returns level, objectives, score, lives, time left, player pose (including Stickman motion), aura, and nearby Zs, pickups, portal, cast, NPC, and boss with positions relative to the player. Reading state drains the event queue.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -323,7 +327,7 @@
             }
           },
           "boss": {
-            "description": "Null until the Threshold Guardian is on the field."
+            "description": "Null until Z, the gravitational fear, is on the field."
           },
           "portalOpen": {
             "type": "boolean"
@@ -383,24 +387,42 @@
                 "type": "number"
               }
             }
+          },
+          "motion": {
+            "type": "number",
+            "description": "0..1. Stickman inertia. An object in motion stays in motion: walk speed rises by up to 18% as this fills, and falls when you stop."
           }
         }
       },
+      "aura": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Space-separated aura names while inside a cast radius: Lift (Balloon), Vibration (Jeffery Bear), Shelter (Anti-Social), Consumed (the Alien)."
+      },
       "nearby": {
         "type": "object",
-        "description": "Entities include world x,z and player-relative dx, dz, dist, and bearing. Bearing is signed radians; positive means the target is to the left (turn_left). Lists are sorted nearest first. Chasers are living only. Pickups are uncollected.",
+        "description": "Entities include world x,z and player-relative dx, dz, dist, and bearing. Bearing is signed radians; positive means the target is to the left (turn_left). Lists are sorted nearest first. Zs are living only. Pickups are uncollected.",
         "properties": {
           "enemies": {
-            "type": "array"
+            "type": "array",
+            "description": "Each living Z. name is Z."
           },
           "pickups": {
             "type": "array",
-            "description": "kind is coin or wisdom."
+            "description": "kind is coin, wisdom (a passion mark: love), or glitter. Glitter is not a goal. On the coin level it spends one held coin. Later it is only a distraction and a score loss."
           },
           "portal": {
             "type": "object"
           },
-          "npc": {},
+          "npc": {
+            "description": "The level guide. Coin, The Slave, or null. The full cast is nearby.cast."
+          },
+          "cast": {
+            "type": "array",
+            "description": "Every branded figure on the level: name, role (guide, lift, love, vibrate, shelter, consume), and pose."
+          },
           "boss": {}
         }
       },
@@ -409,7 +431,7 @@
       },
       "events": {
         "type": "array",
-        "description": "Events since the previous get_state: coin, wisdom, enemy_down, hurt, boss_hit, boss_down, now_shift, level_cleared, level_failed, game_won."
+        "description": "Events since the previous get_state: coin, wisdom, glitter, enemy_down, hurt, boss_hit, boss_down, now_shift, consumed, level_cleared, level_failed, game_won."
       },
       "loadError": {
         "type": [
@@ -419,30 +441,33 @@
       }
     }
   },
-  "coordinates": "World XZ plane, Y is up and unused for movement. The player starts at (0, 0) facing -Z (toward the temple). Pickup radius is about 0.8 on the ground. Touching a chaser costs a life and defeats that chaser. Three lives. Running out of lives or time fails the level.",
+  "coordinates": "World XZ plane, Y is up and unused for movement. The Stickman starts at (0, 0) facing -Z (toward the temple). Pickup radius is about 1 on the ground. Touching a Z costs a life and throws that Z away. Zs tug the Stickman inward inside 5.2 units (Anti-Social cancels the tug). Three lives. Running out of lives or time fails the level. Wisdom objectives are passion marks. Glitter is not an objective.",
   "levels": [
     {
       "index": 0,
-      "name": "I. The Dunes of Now",
+      "name": "I. Far, Far Away",
       "coins": 10,
       "wisdom": 0,
       "enemies": 10,
+      "guide": "Coin",
       "time": 120
     },
     {
       "index": 1,
-      "name": "II. Pilgrim Road",
+      "name": "II. The Path",
       "coins": 0,
       "wisdom": 6,
       "enemies": 18,
+      "guide": "The Slave",
       "time": 110
     },
     {
       "index": 2,
-      "name": "III. Temple Threshold",
+      "name": "III. Beyond Yourself",
       "coins": 0,
       "wisdom": 0,
       "enemies": 24,
+      "boss": "Z",
       "bossHp": 3,
       "portal": true,
       "time": 100

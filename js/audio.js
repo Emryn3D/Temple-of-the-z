@@ -54,7 +54,8 @@ export class GameAudio {
   constructor() { this.ready = false; }
 
   init(camera) {
-    if (this.ready) return;
+    if (this.ready || this.unavailable) return;
+    try {
     this.listener = new THREE.AudioListener();
     camera.add(this.listener);
     const ctx = this.listener.context;
@@ -108,6 +109,10 @@ export class GameAudio {
     }
     this._whisperTimer = 0;
     this.ready = true;
+    } catch (err) {
+      this.unavailable = true;
+      console.warn('Audio unavailable:', err && err.message ? err.message : err);
+    }
   }
 
   _shot(buffer, vol = 0.5, rate = 1) {
